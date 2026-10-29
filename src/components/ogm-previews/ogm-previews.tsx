@@ -23,6 +23,8 @@ export class OgmPreviews {
   // MapLibreTheme.getBaseMapStyle. Undefined keeps this library's own default.
   @Prop() darkBasemap?: string;
   @Prop() lightBasemap?: string;
+  /** Omit metadata-only location previews derived from a record. Explicit previewers are preserved. */
+  @Prop() omitLocation: boolean = false;
   @Prop() record?: OgmRecord;
   // Previews to show, for an application that builds its own rather than handing over a record - the
   // tab strip is worth having either way. Takes the place of `record`, which is then not read at all.
@@ -75,7 +77,7 @@ export class OgmPreviews {
   // Every preview to show, one per tab: the ones we were handed, or else the ones this record turned
   // out to offer.
   private get tabs(): AnyPreviewer[] {
-    return this.previewers ?? this.recordPreviewers;
+    return this.previewers ?? this.recordPreviewers.filter(preview => !this.omitLocation || preview.kind !== 'location');
   }
 
   // @Watch only fires on changes, so the record we were rendered with is handled here. Returning
@@ -131,7 +133,12 @@ export class OgmPreviews {
 
     return (
       <Host class={waScope(this.theme)}>
-        <wa-tab-group ref={(el: HTMLElement) => (this.tabGroup = el)} active={this.activePreview?.previewId} class={waScope(this.theme)} key={tabs.map(previewer => previewer.previewId).join()}>
+        <wa-tab-group
+          ref={(el: HTMLElement) => (this.tabGroup = el)}
+          active={this.activePreview?.previewId}
+          class={waScope(this.theme)}
+          key={tabs.map(previewer => previewer.previewId).join()}
+        >
           {tabs.map(previewer => (
             <wa-tab key={`tab-${previewer.previewId}`} panel={previewer.previewId}>
               {previewer.label()}

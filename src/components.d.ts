@@ -197,6 +197,11 @@ export namespace Components {
     interface OgmPreviews {
         "darkBasemap"?: string;
         "lightBasemap"?: string;
+        /**
+          * Omit metadata-only location previews derived from a record. Explicit previewers are preserved.
+          * @default false
+         */
+        "omitLocation": boolean;
         "previewers"?: AnyPreviewer[];
         "record"?: OgmRecord;
         "requestTransform"?: RequestTransform;
@@ -225,11 +230,21 @@ export namespace Components {
     interface OgmViewer {
         "darkBasemap"?: string;
         /**
+          * Omit the internal title and menu when an embedding application supplies them.
+          * @default false
+         */
+        "hideMenubar": boolean;
+        /**
           * @default false
          */
         "hideTitle": boolean;
         "lightBasemap"?: string;
         "loadRecord": (record: OgmRecord) => Promise<void>;
+        /**
+          * Omit the metadata-only location preview; content map layers are unaffected.
+          * @default false
+         */
+        "omitLocation": boolean;
         "recordUrl"?: string;
         "requestTransform"?: RequestTransform;
         /**
@@ -703,6 +718,11 @@ declare namespace LocalJSX {
         "darkBasemap"?: string;
         "lightBasemap"?: string;
         /**
+          * Omit metadata-only location previews derived from a record. Explicit previewers are preserved.
+          * @default false
+         */
+        "omitLocation"?: boolean;
+        /**
           * Active preview identity; null when there are no previews.
          */
         "onPreviewChange"?: (event: OgmPreviewsCustomEvent<PreviewSelection | null>) => void;
@@ -738,10 +758,20 @@ declare namespace LocalJSX {
     interface OgmViewer {
         "darkBasemap"?: string;
         /**
+          * Omit the internal title and menu when an embedding application supplies them.
+          * @default false
+         */
+        "hideMenubar"?: boolean;
+        /**
           * @default false
          */
         "hideTitle"?: boolean;
         "lightBasemap"?: string;
+        /**
+          * Omit the metadata-only location preview; content map layers are unaffected.
+          * @default false
+         */
+        "omitLocation"?: boolean;
         "recordUrl"?: string;
         "requestTransform"?: RequestTransform;
         /**
@@ -815,6 +845,7 @@ declare namespace LocalJSX {
         "theme": 'light' | 'dark';
         "darkBasemap": string;
         "lightBasemap": string;
+        "omitLocation": boolean;
         "sidebarPadding": number;
     }
     interface OgmSidebarAttributes {
@@ -829,6 +860,8 @@ declare namespace LocalJSX {
         "theme": 'light' | 'dark';
         "darkBasemap": string;
         "lightBasemap": string;
+        "hideMenubar": boolean;
+        "omitLocation": boolean;
         "hideTitle": boolean;
     }
 

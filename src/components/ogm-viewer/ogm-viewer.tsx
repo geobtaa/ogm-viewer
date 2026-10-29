@@ -18,6 +18,10 @@ export class OgmViewer {
   // MapLibreTheme.getBaseMapStyle. Undefined keeps this library's own default.
   @Prop() darkBasemap?: string;
   @Prop() lightBasemap?: string;
+  /** Omit the internal title and menu when an embedding application supplies them. */
+  @Prop() hideMenubar: boolean = false;
+  /** Omit the metadata-only location preview; content map layers are unaffected. */
+  @Prop() omitLocation: boolean = false;
   @Prop() hideTitle: boolean = false;
   // Applied to the record fetch itself, and passed down to every resource built from it - see
   // Resource.requestTransform. A DOM property, like previewer on <ogm-preview>: set it before or
@@ -104,7 +108,7 @@ export class OgmViewer {
     return (
       <Host class={`wa-${this.theme}`}>
         <div class={`container ${waScope(this.theme)}`}>
-          <ogm-menubar theme={this.theme} record={this.record} loading={this.loading} hideTitle={this.hideTitle}></ogm-menubar>
+          {!this.hideMenubar && <ogm-menubar theme={this.theme} record={this.record} loading={this.loading} hideTitle={this.hideTitle}></ogm-menubar>}
           <div class="main-container">
             <ogm-sidebar theme={this.theme} record={this.record} open={this.sidebarOpen} requestTransform={this.requestTransform}></ogm-sidebar>
             {this.error ? (
@@ -114,6 +118,7 @@ export class OgmViewer {
                 theme={this.theme}
                 darkBasemap={this.darkBasemap}
                 lightBasemap={this.lightBasemap}
+                omitLocation={this.omitLocation}
                 record={this.record}
                 requestTransform={this.requestTransform}
                 sidebar-padding={this.sidebarPadding}

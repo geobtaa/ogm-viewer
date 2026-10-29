@@ -401,3 +401,11 @@ The payload types `PreviewSelection`, `ImageSelection`, `ImageSequenceEntry`,
 and `ImageNavigation` are exported from `ogm-viewer/lib`.
 
 `image.service` optionally contains the loaded IIIF service ID, Image API version, dimensions, profile, advertised sizes, and size limits. It clears with `image: null`; consumers need not fetch the manifest again.
+
+### Embedding without duplicate controls
+
+`hide-menubar` on `<ogm-viewer>` omits the internal title/menu row.
+`omit-location` on `<ogm-viewer>` or `<ogm-previews>` excludes only the
+metadata-derived Location preview, preserving actual map layers and explicitly
+supplied previewers. Both options default to false. Set them before loading a
+record to avoid rendering unwanted controls in the first frame.

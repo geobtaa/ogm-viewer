@@ -33,3 +33,6 @@ test-support/
 
 test-results/
 playwright-report/
+
+artifacts/
+fork-build.json

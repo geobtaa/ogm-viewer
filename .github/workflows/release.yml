@@ -8,6 +8,7 @@ on:
 
 jobs:
   publish:
+    if: github.repository == 'OpenGeoMetadata/ogm-viewer'
     runs-on: ubuntu-latest
     permissions:
       # npm reads this to mint its own short-lived credential, so there is no token to keep in a

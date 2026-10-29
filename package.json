@@ -1,6 +1,6 @@
 {
-  "name": "ogm-viewer",
-  "version": "1.6.0",
+  "name": "@geobtaa/ogm-viewer",
+  "version": "1.6.0-btaa.1",
   "description": "A web-based viewer for previewing OpenGeoMetadata records",
   "module": "./dist/components/ogm-viewer.js",
   "types": "./dist/components/ogm-viewer.d.ts",
@@ -20,10 +20,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/OpenGeoMetadata/ogm-viewer.git"
+    "url": "https://github.com/geobtaa/ogm-viewer.git"
   },
   "files": [
-    "dist/"
+    "dist/",
+    "fork-build.json"
   ],
   "scripts": {
     "assets": "node scripts/inline-assets.mjs",
@@ -38,7 +39,8 @@
     "test:www": "stencil-test --project www",
     "generate": "stencil generate",
     "lint": "tsc --noEmit && prettier --check .",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "pack:fork": "npm run build && node scripts/pack-fork.mjs"
   },
   "devDependencies": {
     "@mapbox/vector-tile": "^2.0.4",
@@ -89,5 +91,6 @@
     "openseadragon": "^6.1.1",
     "pmtiles": "^4.4.1",
     "polylabel": "^2.1.0"
-  }
+  },
+  "private": true
 }

@@ -11,3 +11,8 @@ src/components.d.ts
 # Ignore the theme, icons and wasm the build inlines
 src/lib/assets.generated.ts
 src/lib/lerc-wasm.generated.ts
+
+artifacts
+fork-build.json
+test-results
+playwright-report

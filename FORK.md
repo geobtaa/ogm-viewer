@@ -1,9 +1,14 @@
 # BTAA integration fork
 
-This is a stabilization fork based on upstream **v1.6.0**, commit
-`9bf7a870b6269b636f218874edcaa6d8d68e3406`. No upstream PRs have been opened for
+This is a stabilization fork based on upstream **v1.7.0**, commit
+`b85061b8c5aa38a3b19b1a5e28acc7eec5d765dd`. No upstream PRs have been opened for
 these changes. The integration branch is `feature/viewer-integration`; `main`
 is the unmodified upstream history.
+
+Upstream v1.7.0 is merged into the integration branch without rewriting the
+existing focused commits. It adds COG index-map mosaics, FGDC-derived legends,
+layer ordering controls, and improved handling of blocked requests. Our image
+selection, embedding, and bounds compatibility changes remain in place.
 
 The changes are intentionally separate commits:
 
@@ -58,7 +63,7 @@ steps; creating a tag does not publish an npm package.
 ## Upgrade and eventual removal
 
 1. Fetch upstream tags; identify the exact candidate baseline and review its API changes.
-2. Rebase the focused source commits in a new branch. Drop changes that upstream now provides.
+2. Merge the upstream release into the integration branch, preserving focused source commits. Drop changes that upstream now provides.
 3. Regenerate declarations with `npm run build`; commit any generated changes.
 4. Run source tests, real-browser tests, and the consuming application's development
    and production viewer/Downloads browser suites. Keep fixtures local and deterministic.

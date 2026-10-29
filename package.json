@@ -1,6 +1,6 @@
 {
   "name": "@geobtaa/ogm-viewer",
-  "version": "1.6.0-btaa.2",
+  "version": "1.7.0-btaa.1",
   "description": "A web-based viewer for previewing OpenGeoMetadata records",
   "module": "./dist/components/ogm-viewer.js",
   "types": "./dist/components/ogm-viewer.d.ts",
@@ -44,6 +44,7 @@
   },
   "devDependencies": {
     "@mapbox/vector-tile": "^2.0.4",
+    "@maplibre/maplibre-gl-style-spec": "^26.4.4",
     "@playwright/test": "^1.60.0",
     "@stencil/core": "^4.43.4",
     "@stencil/playwright": "^0.4.3",
@@ -53,13 +54,13 @@
     "@types/node": "^22.13.5",
     "@types/polylabel": "^2.0.0",
     "@types/terraformer__wkt": "^2.0.3",
-    "@vitest/coverage-v8": "^4.1.7",
+    "@vitest/coverage-v8": "^4.1.11",
     "happy-dom": "^20.9.0",
     "pbf": "^4.0.1",
     "prettier": "^3.6.2",
     "rolldown": "^1.0.3",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.11"
   },
   "license": "MIT",
   "dependencies": {

@@ -11,6 +11,7 @@ import { adoptWebAwesomeTheme, initialTheme, waScope } from '../../lib/init';
 import { resourcesFor } from '../../lib/resources/factory';
 import { previewersForResources, type AnyPreviewer } from '../../lib/previewers/factory';
 import type { RequestTransform } from '../../lib/request';
+import { defaultBeforeId } from '../../lib/themes/maplibre';
 
 @Component({
   tag: 'ogm-previews',
@@ -20,8 +21,6 @@ import type { RequestTransform } from '../../lib/request';
 export class OgmPreviews {
   @Element() el!: HTMLElement;
   @Prop() theme: 'light' | 'dark' = initialTheme(this.el);
-  // A caller's own basemap for each mode, as a URL to a MapLibre style document; see
-  // MapLibreTheme.getBaseMapStyle. Undefined keeps this library's own default.
   @Prop() darkBasemap?: string;
   @Prop() lightBasemap?: string;
   /** Omit metadata-only location previews derived from a record. Explicit previewers are preserved. */
@@ -31,13 +30,10 @@ export class OgmPreviews {
   /** Hide tab navigation when only one preview is visible. */
   @Prop() hideSingleTab: boolean = false;
   @Prop() record?: OgmRecord;
-  // Previews to show, for an application that builds its own rather than handing over a record - the
-  // tab strip is worth having either way. Takes the place of `record`, which is then not read at all.
-  // A DOM property, like `record`: neither survives being written as an attribute.
   @Prop() previewers?: AnyPreviewer[];
-  // Passed to resourcesFor() when building this record's previews; see Resource.requestTransform.
-  // Previewers handed over directly carry their own, by way of the resources they were built from.
   @Prop() requestTransform?: RequestTransform;
+  /** Undefined uses the default label layer; an empty string places previews above the basemap. */
+  @Prop() beforeId?: string;
   @Prop() sidebarPadding: number;
   @State() private recordPreviewers: AnyPreviewer[] = [];
   /** Active preview identity; null when there are no previews. */
@@ -119,22 +115,16 @@ export class OgmPreviews {
   @Event() previewsLoading: EventEmitter<void>;
   @Event() previewsLoaded: EventEmitter<void>;
 
-  // Which build of the list is the current one. A record can change while the previous one's
-  // previews are still being worked out, and the answer that arrives last is not necessarily the
-  // one still wanted.
+  // Ignore preview lists built for a record that has since changed.
   private pending = 0;
 
-  // Every preview to show, one per tab: the ones we were handed, or else the ones this record turned
-  // out to offer.
   private get tabs(): AnyPreviewer[] {
     if (this.previewers) return this.previewers;
     const previews = this.recordPreviewers.filter(preview => !this.omitLocation || preview.kind !== 'location');
     return this.preferManifest ? preferManifests(previews) : previews;
   }
 
-  // @Watch only fires on changes, so the record we were rendered with is handled here. Returning
-  // the promise makes Stencil hold the first render until the tabs are known, so the tab strip is
-  // never painted empty and then filled in.
+  // Return the promise so the first render waits until the preview tabs are known.
   componentWillLoad() {
     adoptWebAwesomeTheme(this.el);
     return this.buildPreviewers(this.record);
@@ -145,8 +135,6 @@ export class OgmPreviews {
     await this.buildPreviewers(record);
   }
 
-  // Every preview this record offers, one per tab. Skipped entirely when previews were handed to us:
-  // there is nothing for a record to add, and the work would only be thrown away.
   private async buildPreviewers(record?: OgmRecord) {
     const build = ++this.pending;
     this.resetSelection();
@@ -158,27 +146,24 @@ export class OgmPreviews {
     this.previewsLoading.emit();
     try {
       const previewers = await previewersForResources(resourcesFor(record, this.requestTransform));
-      // A newer record started building while this one was waiting; that one's answer is the keeper
+      this.applyBeforeId(previewers, this.beforeId);
       if (build === this.pending) this.recordPreviewers = previewers;
     } finally {
-      // Always paired with the emit above, even when superseded: ogm-viewer counts these
       this.previewsLoaded.emit();
     }
   }
 
-  // Render as tabs for switching between previews.
-  //
-  // Keyed by which preview each element draws, not by where it sits. Position is the wrong identity
-  // twice over: a tab and its panel are siblings inside the group, so numbering both from zero gave
-  // it two children under every key and the diff went on to reuse a tab where a panel belonged. And
-  // wa-tab-group tracks which tab is active itself, in a property no render of ours writes, so a
-  // group left standing across a change of previews keeps pointing at whichever tab the user had
-  // picked - the third one of a record that now offers two. Keying the group by the whole set
-  // replaces it outright when the previews change, which is the only way to clear that.
-  //
-  // The tab group carries the Web Awesome scope as well as the Host, since the stylesheet linked here
-  // establishes the palette with plain class selectors and those never match their own shadow host.
-  // Everything the group draws - the tabs, their panels - reads its colors from it.
+  @Watch('beforeId')
+  protected onBeforeIdChange(beforeId?: string) {
+    this.applyBeforeId(this.recordPreviewers, beforeId ?? defaultBeforeId);
+  }
+
+  private applyBeforeId(previewers: AnyPreviewer[], beforeId?: string) {
+    if (beforeId === undefined) return;
+    for (const previewer of previewers) if (previewer.renderer === 'map') previewer.beforeId = beforeId;
+  }
+
+  // Key the group by its previews so a new set resets the internally managed active tab.
   render() {
     const tabs = this.tabs;
     if (!tabs.length) return;

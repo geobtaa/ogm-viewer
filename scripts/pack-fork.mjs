@@ -9,7 +9,7 @@ if (pkg.name !== '@geobtaa/ogm-viewer' || !pkg.version.includes('-btaa.')) throw
 const provenance = {
   repository: 'https://github.com/geobtaa/ogm-viewer',
   commit: git('rev-parse', 'HEAD'),
-  upstream: { repository: 'https://github.com/OpenGeoMetadata/ogm-viewer', tag: 'v1.6.0', commit: '9bf7a870b6269b636f218874edcaa6d8d68e3406' },
+  upstream: { repository: 'https://github.com/OpenGeoMetadata/ogm-viewer', tag: 'v1.7.0', commit: 'b85061b8c5aa38a3b19b1a5e28acc7eec5d765dd' },
   package: pkg.name,
   version: pkg.version,
   node: process.version,

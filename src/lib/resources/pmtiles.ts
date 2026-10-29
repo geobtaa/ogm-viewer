@@ -1,53 +1,91 @@
-// Adapted from https://github.com/protomaps/PMTiles/blob/main/app/src/tileset.ts
-
-import { FetchSource, PMTiles, Protocol, TileType, Header } from 'pmtiles';
+import { EtagMismatch, FetchSource, PMTiles, Protocol, TileType, type Header, type RangeResponse } from 'pmtiles';
 import { addProtocol, type LngLatBoundsLike } from 'maplibre-gl';
 
 import Resource, { type ResourceKind } from './resource';
+import { assertData, HttpError } from '../errors';
 import type { RequestTransform } from '../request';
 
-// A single vector layer in a PMTiles tileset
 interface VectorLayer {
   id: string;
 }
 
-// Vector layer metadata stored in PMTiles header
 interface Metadata {
   type?: string;
   vector_layers: VectorLayer[];
 }
 
-// Shared by every PMTiles archive on the page - a MapLibre protocol handler is registered once,
-// globally, for the 'pmtiles://' scheme, however many resources or maps use it.
 const protocol = new Protocol();
 addProtocol('pmtiles', protocol.tile);
 
-// Vector or raster tileset stored in a PMTiles archive at a URL
+// Adapted from FetchSource.getBytes in pmtiles 4.4.1, with changes so we can check
+// the response. Needed so we can raise if we get blocked by bot protection or login.
+export class CheckedFetchSource extends FetchSource {
+  async getBytes(offset: number, length: number, passedSignal?: AbortSignal, etag?: string): Promise<RangeResponse> {
+    const controller = passedSignal ? undefined : new AbortController();
+    const signal = passedSignal ?? controller?.signal;
+
+    const headers = new Headers(this.customHeaders);
+    headers.set('range', `bytes=${offset}-${offset + length - 1}`);
+
+    let cache: RequestCache | undefined;
+    if (this.mustReload) cache = 'reload';
+    else if (this.chromeWindowsNoCache) cache = 'no-store';
+
+    let response = await fetch(this.url, { signal, cache, headers, credentials: this.credentials });
+
+    // Some servers refuse a header read that runs past the end of a small archive; ask again for exactly what is there.
+    if (offset === 0 && response.status === 416) {
+      const contentRange = response.headers.get('content-range');
+      if (!contentRange?.startsWith('bytes */')) throw new Error('Missing content-length on 416 response');
+
+      headers.set('range', `bytes=0-${Number(contentRange.slice(8)) - 1}`);
+      response = await fetch(this.url, { signal, cache: 'reload', headers, credentials: this.credentials });
+    }
+
+    assertData(response, this.url);
+
+    let newEtag = response.headers.get('etag');
+    if (newEtag?.startsWith('W/')) newEtag = null;
+
+    if (response.status === 416 || (etag && newEtag && newEtag !== etag)) {
+      this.mustReload = true;
+      throw new EtagMismatch(`Server returned non-matching ETag ${etag} after one retry. Check browser extensions and servers for issues that may affect correct ETag headers.`);
+    }
+
+    if (response.status >= 300) throw new HttpError(this.url, response.status, response.statusText);
+
+    const contentLength = response.headers.get('content-length');
+    if (response.status === 200 && (!contentLength || Number(contentLength) > length)) {
+      controller?.abort();
+      throw new Error('Server returned no content-length header or content-length exceeding request. Check that your storage backend supports HTTP Byte Serving.');
+    }
+
+    return {
+      data: await response.arrayBuffer(),
+      etag: newEtag ?? undefined,
+      cacheControl: response.headers.get('cache-control') ?? undefined,
+      expires: response.headers.get('expires') ?? undefined,
+    };
+  }
+}
+
 export default class PMTilesResource extends Resource {
   readonly kind: ResourceKind = 'pmtiles';
 
-  // PMTiles object for reading metadata and tiles from the archive
   private archive: PMTiles;
 
-  // Memoized PMTiles metadata and header
   private metadata: Metadata;
   private header: Header;
 
-  // Store a reference so we can open the archive for metadata inspection
   constructor(id: string, url: string, bounds?: LngLatBoundsLike, requestTransform?: RequestTransform) {
     super(id, url, bounds, requestTransform);
 
     const transformed = requestTransform?.(url, 'tile');
     const headers = transformed?.headers ? new Headers(transformed.headers) : undefined;
-    // A transform that rewrote the URL is ignored here: the protocol handler above looks archives
-    // up by the exact URL getMapLibreSourceUrl() embeds in the pmtiles:// source, so this instance
-    // has to be keyed by this.url to ever be found once a map asks for tiles from it.
-    const source = headers || transformed?.credentials ? new FetchSource(url, headers, credentialsFor(transformed?.credentials)) : url;
-    this.archive = new PMTiles(source);
+    // Keep the archive lookup URL stable; PMTiles registers it under the original source URL.
+    this.archive = new PMTiles(new CheckedFetchSource(url, headers, credentialsFor(transformed?.credentials)));
 
-    // Registering unconditionally, not just for authenticated archives, means the protocol
-    // handler reuses this instance for tile reads instead of lazily opening its own second,
-    // unauthenticated PMTiles - sharing one header/tile cache either way.
+    // Register the archive even without credentials so tile reads reuse this instance.
     protocol.add(this.archive);
   }
 
@@ -55,7 +93,6 @@ export default class PMTilesResource extends Resource {
     return 'PMTiles';
   }
 
-  // Fetch and memoize PMTiles metadata
   protected async getMetadata() {
     if (!this.metadata) {
       this.metadata = (await this.archive.getMetadata()) as Metadata;
@@ -63,7 +100,6 @@ export default class PMTilesResource extends Resource {
     return this.metadata;
   }
 
-  // Fetch and memoize PMTiles header
   protected async getHeader() {
     if (!this.header) {
       this.header = (await this.archive.getHeader()) as Header;
@@ -71,15 +107,12 @@ export default class PMTilesResource extends Resource {
     return this.header;
   }
 
-  // Determined by encoding
   async isVector() {
     const header = await this.getHeader();
     return header.tileType === TileType.Mvt || header.tileType === TileType.Mlt;
   }
 
-  // Used to zoom the map to the data once loaded
-  async getBounds() {
-    if (this.bounds) return this.bounds;
+  async getReportedBounds() {
     const header = await this.getHeader();
     return [
       [header.minLon, header.minLat],
@@ -87,7 +120,6 @@ export default class PMTilesResource extends Resource {
     ] as [[number, number], [number, number]];
   }
 
-  // PMTiles can be used as a basemap, but the default is overlay
   async isOverlay() {
     const m = await this.getMetadata();
     return m.type === 'overlay';
@@ -105,17 +137,14 @@ export default class PMTilesResource extends Resource {
     return undefined;
   }
 
-  // Appends the pmtiles:// protocol; must be registered first to work
   getMapLibreSourceUrl() {
     return `pmtiles://${this.url}`;
   }
 
-  // Raster PMTiles have no specific scheme identifier for MapLibre
   getScheme() {
     return undefined;
   }
 
-  // We don't need to set an explicit tile size for raster PMTiles
   getTileSize() {
     return undefined;
   }
@@ -126,8 +155,6 @@ export default class PMTilesResource extends Resource {
   }
 }
 
-// Narrow a RequestTransform's credentials to what FetchSource accepts. 'omit' is the default -
-// don't send cookies - so there's nothing for FetchSource to do differently for it.
 function credentialsFor(credentials?: RequestCredentials): 'same-origin' | 'include' | undefined {
   return credentials === 'omit' ? undefined : credentials;
 }

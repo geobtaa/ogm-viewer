@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from '@stencil/vitest';
 import { LngLatBounds } from 'maplibre-gl';
 import {
   bboxToBounds,
+  boundsOverlap,
   boundsToBbox,
   boundsToGeoJSON,
   clampToHemisphere,
@@ -10,6 +11,7 @@ import {
   mercatorBbox,
   mercatorGeomToLngLat,
   mercatorToLngLat,
+  pixelSpan,
   pixelWindowCenter,
   readBounds,
   tileBbox3857,
@@ -46,9 +48,6 @@ describe('geomToGeoJSON', () => {
     });
   });
 
-  // The whole path a record's bounding box takes: WKT parsing fails on ENVELOPE, so it is read as a
-  // box and squared back off into a ring. Twenty degrees of the Pacific rather than the 340 of
-  // everywhere else.
   it('should convert an ENVELOPE that crosses the antimeridian to GeoJSON', () => {
     const geojson = geomToGeoJSON('ENVELOPE(170,-170,10,-10)');
     expect(geojson).toEqual({
@@ -82,10 +81,6 @@ describe('bboxToBounds', () => {
     expect(bounds).toEqual(new LngLatBounds([-10, 0], [-5, 5]));
   });
 
-  // A box that crosses the antimeridian names its west edge east of its east edge, which is how both
-  // Solr's ENVELOPE syntax and RFC 7946 section 5.2 say to write one. Carried onward past 180 so that
-  // the box stays in one piece: read as it is written, -170 would put the camera on the 340 degrees
-  // of the world the record doesn't cover.
   it('should carry the east edge past 180 for a box that crosses the antimeridian', () => {
     const bounds = bboxToBounds('ENVELOPE(170,-170,10,-10)');
     expect(bounds).toEqual(new LngLatBounds([170, -10], [190, 10]));
@@ -109,43 +104,32 @@ describe('boundsToBbox', () => {
     expect(boundsToBbox(new LngLatBounds([-124.41, 32.53], [-114.13, 42.01]))).toEqual([-124.41, 32.53, -114.13, 42.01]);
   });
 
-  // The inverse of bboxToBounds, so what one takes apart the other puts back
   it('should undo what bboxToBounds did', () => {
     expect(boundsToBbox(bboxToBounds('ENVELOPE(170,-170,10,-10)')!)).toEqual([170, -10, -170, 10]);
   });
 
-  // What bboxToBounds hands over for a box across the antimeridian, and what a camera panned onto one
-  // reports: an east edge carried past 180. Named the way it has to be written rather than the way it
-  // was read - see the note above unwrapEast - so the 20 degrees of the Pacific is what gets searched
-  // rather than the 340 degrees of everywhere else.
   it('should bring an east edge carried past 180 back into range', () => {
     expect(boundsToBbox(new LngLatBounds([170, -10], [190, 10]))).toEqual([170, -10, -170, 10]);
   });
 
-  // A camera's center is never wrapped, so panning east far enough leaves both edges out of range
   it('should bring back both edges of a view panned clear of the range', () => {
     expect(boundsToBbox(new LngLatBounds([530, -10], [560, 10]))).toEqual([170, -10, -160, 10]);
   });
 
-  // Named outright rather than wrapped: MapLibre's wrap answers 180 for an edge on -180, which would
-  // leave the whole world reported as a line
   it('should name the whole range for a view exactly as wide as the world', () => {
     expect(boundsToBbox(new LngLatBounds([-180, -85], [180, 85]))).toEqual([-180, -85, 180, 85]);
   });
 
-  // Several world copies at once, which a flat map at minZoom 0 can show
   it('should name the whole range for a view wider than the world', () => {
     expect(boundsToBbox(new LngLatBounds([-400, -60], [400, 60]))).toEqual([-180, -60, 180, 60]);
   });
 
-  // A globe with a pole facing the camera reports exactly the pole, which is a latitude Solr takes
   it('should leave a view that reaches a pole alone', () => {
     expect(boundsToBbox(new LngLatBounds([-30, -90], [30, 90]))).toEqual([-30, -90, 30, 90]);
   });
 });
 
 describe('readBounds', () => {
-  // The four numbers in the order every other bbox here is written in
   it('should read a west, south, east, north list', () => {
     expect(readBounds([-124.41, 32.53, -114.13, 42.01])?.toArray()).toEqual([
       [-124.41, 32.53],
@@ -158,7 +142,6 @@ describe('readBounds', () => {
     expect(readBounds('-124.41 32.53 -114.13 42.01')?.getWest()).toEqual(-124.41);
   });
 
-  // The form dcat_bbox is written in, so a record's own box can be handed over as it stands
   it('should read an ENVELOPE string', () => {
     expect(readBounds('ENVELOPE(-124.41,-114.13,42.01,32.53)')?.toArray()).toEqual([
       [-124.41, 32.53],
@@ -177,9 +160,6 @@ describe('readBounds', () => {
     ).toEqual(bounds.toArray());
   });
 
-  // The inverse of boundsToBbox, which is what lets an area a reader asked to search be handed back
-  // to hold the map there. The east edge is carried past 180 again on the way in, so the camera frames
-  // the 30 degrees of the Pacific the view covered rather than the 330 degrees of everywhere else.
   it('should undo what boundsToBbox did to a view across the antimeridian', () => {
     const view = new LngLatBounds([530, -10], [560, 10]);
     const read = readBounds(boundsToBbox(view))!;
@@ -195,9 +175,158 @@ describe('readBounds', () => {
     expect(readBounds('')).toBeUndefined();
   });
 
-  // MapLibre throws on these rather than saying so, and a camera nobody can point is worth reporting
   it('should read nothing from a box that reaches past a pole', () => {
     expect(readBounds([-30, -100, 30, 100])).toBeUndefined();
+  });
+});
+
+describe('boundsOverlap', () => {
+  const ARCHIVE: [[number, number], [number, number]] = [
+    [-123.532115, 36.893111],
+    [-121.208298, 38.864317],
+  ];
+
+  it('should find two boxes that share some ground', () => {
+    expect(
+      boundsOverlap(ARCHIVE, [
+        [-122.5, 37.5],
+        [-120, 40],
+      ]),
+    ).toBe(true);
+  });
+
+  it('should find a box inside another', () => {
+    expect(
+      boundsOverlap(ARCHIVE, [
+        [-122.5, 37.5],
+        [-122.4, 37.6],
+      ]),
+    ).toBe(true);
+  });
+
+  it('should find nothing in common with a box elsewhere in the world', () => {
+    expect(
+      boundsOverlap(ARCHIVE, [
+        [0, 0],
+        [1, 1],
+      ]),
+    ).toBe(false);
+  });
+
+  it('should find nothing in common with a box above or below it at the same longitudes', () => {
+    expect(
+      boundsOverlap(ARCHIVE, [
+        [-123, 40],
+        [-122, 41],
+      ]),
+    ).toBe(false);
+    expect(
+      boundsOverlap(ARCHIVE, [
+        [-123, 30],
+        [-122, 31],
+      ]),
+    ).toBe(false);
+  });
+
+  it('should count boxes that only touch as overlapping', () => {
+    expect(
+      boundsOverlap(ARCHIVE, [
+        [-121.208298, 38],
+        [-120, 39],
+      ]),
+    ).toBe(true);
+    expect(
+      boundsOverlap(ARCHIVE, [
+        [-121.208298, 38.864317],
+        [-121.208298, 38.864317],
+      ]),
+    ).toBe(true);
+  });
+
+  it('should find a box on either side of the antimeridian inside one that crosses it', () => {
+    const aleutians = bboxToBounds('ENVELOPE(170.0,-170.0,54.0,50.0)')!;
+
+    expect(
+      boundsOverlap(aleutians, [
+        [175, 51],
+        [176, 52],
+      ]),
+    ).toBe(true);
+    expect(
+      boundsOverlap(aleutians, [
+        [-175, 51],
+        [-174, 52],
+      ]),
+    ).toBe(true);
+    expect(
+      boundsOverlap(
+        [
+          [175, 51],
+          [176, 52],
+        ],
+        aleutians,
+      ),
+    ).toBe(true);
+  });
+
+  it('should find nothing in common between a box that crosses the antimeridian and one across the world from it', () => {
+    expect(
+      boundsOverlap(bboxToBounds('ENVELOPE(170.0,-170.0,54.0,50.0)')!, [
+        [0, 51],
+        [1, 52],
+      ]),
+    ).toBe(false);
+  });
+
+  it('should find a box written past 180 where the same place written plainly is', () => {
+    expect(
+      boundsOverlap(
+        [
+          [0.5, 0.5],
+          [0.6, 0.6],
+        ],
+        [
+          [360, 0],
+          [361, 1],
+        ],
+      ),
+    ).toBe(true);
+    expect(
+      boundsOverlap(
+        [
+          [-122.5, 37.5],
+          [-122.4, 37.6],
+        ],
+        [
+          [237.5, 37.5],
+          [237.6, 37.6],
+        ],
+      ),
+    ).toBe(true);
+  });
+
+  it('should find anything at the same latitudes inside a box that goes all the way round', () => {
+    expect(
+      boundsOverlap(
+        [
+          [-180, -85],
+          [180, 85],
+        ],
+        ARCHIVE,
+      ),
+    ).toBe(true);
+    expect(
+      boundsOverlap(
+        [
+          [-200, -10],
+          [200, 10],
+        ],
+        [
+          [100, 0],
+          [101, 1],
+        ],
+      ),
+    ).toBe(true);
   });
 });
 
@@ -219,10 +348,6 @@ describe('boundsToGeoJSON', () => {
     });
   });
 
-  // Each vertex is projected on its own, so a ring whose east edge reads as the smaller number is
-  // drawn the long way round: across the rest of the world rather than across the date line. Every
-  // corner a caller may hand us has already been carried past 180 by bboxToBounds, but one built
-  // from a box by hand has not, so the ring is squared off from the edges rather than the corners.
   it('should draw a box that crosses the antimeridian the short way round', () => {
     const geojson = boundsToGeoJSON(new LngLatBounds([170, -10], [-170, 10]));
     expect(geojson).toEqual({
@@ -260,7 +385,6 @@ describe('lngLatToMercator', () => {
 
 describe('mercatorBbox', () => {
   it('should envelope the coordinates as minx,miny,maxx,maxy', () => {
-    // Corners of a query window, in the arbitrary order they were unprojected in
     const bbox = mercatorBbox([
       [-120.9, 38.5],
       [-120.0, 38.5],
@@ -288,7 +412,6 @@ describe('mercatorToLngLat', () => {
   });
 
   it('should convert a coordinate a WMS returned in EPSG:3857 meters', () => {
-    // A vertex of a Calaveras County tract, as GeoServer reported it
     const [lng, lat] = mercatorToLngLat([-13402032.01418895, 4622299.14920388]);
     expect(lng).toBeCloseTo(-120.39250196605, 6);
     expect(lat).toBeCloseTo(38.30286413751, 6);
@@ -344,11 +467,9 @@ describe('mercatorGeomToLngLat', () => {
 });
 
 describe('pixelWindowCenter', () => {
-  // A 51x51 window spanning 510 meters, so each pixel is ten meters across
   const window = { bbox: '-10000,0,-9490,510', width: 51, height: 51, x: 25, y: 25 };
 
   it('should find the coordinate at the middle of the named pixel', () => {
-    // Pixel 25 of 51 is the middle one, so its center sits 255m in from each edge
     expect(pixelWindowCenter(window)).toEqual({ x: -9745, y: 255, resolution: 10 });
   });
 
@@ -384,8 +505,6 @@ describe('unionBounds', () => {
     ]);
   });
 
-  // extend() writes into the box it is called on, so a union that started from the first extent
-  // given would quietly grow whichever box its caller handed over first.
   it('should leave the extents it was handed alone', () => {
     const california = new LngLatBounds(CALIFORNIA);
     unionBounds([california, ICELAND]);
@@ -402,8 +521,6 @@ describe('unionBounds', () => {
     expect(unionBounds([undefined, CALIFORNIA, undefined])!.toArray()).toEqual(CALIFORNIA);
   });
 
-  // A box over the Bering Strait arrives with its east edge carried past 180 - see unwrapEast - and
-  // has to keep it. Read as 170..-170 the union would span the 340 degrees of everywhere else.
   it('should keep a box that crosses the antimeridian on its own side of the world', () => {
     const aleutians = bboxToBounds('ENVELOPE(170.0,-170.0,54.0,50.0)')!;
 
@@ -421,7 +538,6 @@ describe('clampToHemisphere', () => {
     expect(clampToHemisphere(california).toArray()).toEqual(california.toArray());
   });
 
-  // Half the world is what a globe shows, so a box that measures exactly that is already pointable
   it('should count half the world as facing the camera', () => {
     const halfTheWorld = new LngLatBounds([
       [-90, -40],
@@ -431,9 +547,6 @@ describe('clampToHemisphere', () => {
     expect(clampToHemisphere(halfTheWorld).toArray()).toEqual(halfTheWorld.toArray());
   });
 
-  // Past a hemisphere MapLibre's globe camera has nothing left to solve against - every corner it
-  // tests is behind the horizon - and hands back no camera at all. Held to the half of the world
-  // around the box's own middle, which is the most of it anyone can see at once.
   it('should hold the camera to the half of the world it can actually see', () => {
     const clamped = clampToHemisphere([
       [-170, -40],
@@ -453,8 +566,6 @@ describe('clampToHemisphere', () => {
     expect([clamped.getSouth(), clamped.getNorth()]).toEqual([-40, 60]);
   });
 
-  // What a single record covering the whole world is pointed at: the half of it facing the camera,
-  // with the rest of the record drawn round the back.
   it('should show a whole globe when asked for the whole world', () => {
     const clamped = clampToHemisphere(WORLD);
 
@@ -480,10 +591,26 @@ describe('tileBbox3857', () => {
     const buffered = tileBbox3857(10, 257, 375, 64 / 4096);
     const width = plain[2] - plain[0];
 
-    // The tiler keeps features 64 units past the edge of a 4,096-unit tile, so the query has to
-    // reach exactly that far or a tile comes back missing what would have drawn in its margin
     [0, 1].forEach(edge => expect((plain[edge] - buffered[edge]) / width).toBeCloseTo(64 / 4096, 12));
     [2, 3].forEach(edge => expect((buffered[edge] - plain[edge]) / width).toBeCloseTo(64 / 4096, 12));
+  });
+});
+
+describe('pixelSpan', () => {
+  it('measures a box in the pixels MapLibre counts at zoom 0, 512 to the world', () => {
+    const [width, height] = pixelSpan([-180, -85.0511287798066, 180, 85.0511287798066]);
+
+    expect(width).toBeCloseTo(512);
+    expect(height).toBeCloseTo(512);
+  });
+
+  it('stretches a box’s height away from the equator, as Web Mercator does', () => {
+    const [equatorWidth, equatorHeight] = pixelSpan([0, 0, 1, 1]);
+    const [northWidth, northHeight] = pixelSpan([0, 60, 1, 61]);
+
+    expect(equatorWidth).toBeCloseTo(512 / 360);
+    expect(northWidth).toBeCloseTo(equatorWidth);
+    expect(northHeight / equatorHeight).toBeCloseTo(2, 1);
   });
 });
 
@@ -506,7 +633,6 @@ describe('tilesCovering', () => {
   });
 
   it('never counts less than one tile, however small the extent', () => {
-    // A point extent still needs a tile, and a zero would divide a feature count into infinity
     expect(tilesCovering(new LngLatBounds([-89.4, 43.07], [-89.4, 43.07]), 14)).toEqual(1);
   });
 });

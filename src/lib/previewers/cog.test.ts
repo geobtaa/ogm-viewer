@@ -6,11 +6,8 @@ import { scalarGetTileData } from '../cog-pipeline';
 import RasterPreviewer from './raster';
 import CogResource from '../resources/cog';
 import { DEFAULT_COLOR_RAMP } from '../colormap';
-import type { MapLibreStyle } from '../themes/maplibre';
+import { defaultBeforeId, type MapLibreStyle } from '../themes/maplibre';
 
-// Just enough of a MapLibre map to record what the previewer does. setPaintProperty and
-// setLayoutProperty both throw: MapLibre never learns this layer's id at all, since deck.gl draws
-// through an overlay of its own, so reaching for either would be a bug.
 class FakeMap {
   sources = new Map<string, any>();
   layers = new Map<string, any>();
@@ -38,8 +35,11 @@ class FakeMap {
     this._controls.push(control);
   }
 
-  // Enough of MapLibre's event emitter for the projection watch in CogPreviewer. once() is on()
-  // here: nothing in these tests removes a map, so the distinction never comes up.
+  styleLoaded = true;
+  isStyleLoaded() {
+    return this.styleLoaded;
+  }
+
   listeners = new Map<string, Set<() => void>>();
   on(event: string, fn: () => void) {
     if (!this.listeners.has(event)) this.listeners.set(event, new Set());
@@ -65,8 +65,6 @@ class FakeMap {
   }
 }
 
-// deck.gl's own overlay needs a WebGL context before it will do anything, so this stands in for it
-// and records the props the previewer hands over - which is the whole of how a deck layer is drawn.
 class FakeOverlay {
   props: { layers?: any[] }[] = [];
 
@@ -79,14 +77,8 @@ class FakeOverlay {
   }
 }
 
-// Stands in for the open COG. Every read of it happens inside deck.gl, so the previewer only ever
-// hands it over - which is the whole of what these tests check about it.
 const FAKE_GEOTIFF = { crs: 'EPSG:4326' };
 
-// A single-band float COG - SampleFormat 3, one sample per pixel - with statistics already on
-// record, which is what most GDAL-written COGs carry. Read by isScalarSampleFormat and scalarRange
-// (see cog-pipeline.test.ts for both in isolation); statistics being present means scalarRange never
-// has to reach for fetchTile, so nothing here needs to answer one.
 const FAKE_SCALAR_GEOTIFF = {
   crs: 'EPSG:4326',
   cachedTags: { sampleFormat: [3], samplesPerPixel: 1 },
@@ -94,8 +86,6 @@ const FAKE_SCALAR_GEOTIFF = {
   overviews: [],
 };
 
-// Substitutes the fake overlay for deck.gl's and the fake COG for a real read, leaving everything else
-// the real previewer
 class TestCogPreviewer extends CogPreviewer {
   overlay = new FakeOverlay();
 
@@ -105,7 +95,6 @@ class TestCogPreviewer extends CogPreviewer {
 
   opened: string[] = [];
   refusal: Error | undefined;
-  // What loadGeoTIFF hands back - FAKE_GEOTIFF unless a test needs a scalar one instead
   geotiffToLoad: unknown = FAKE_GEOTIFF;
 
   protected getDeckOverlay() {
@@ -149,8 +138,6 @@ describe('CogPreviewer', () => {
     expect(previewer.previewLayers[0].defaultOpacity).toEqual(0.8);
   });
 
-  // Handed a URL, deck.gl opens the COG with a plain fetch that no request transform can reach, which
-  // is what left a restricted COG undrawable by this previewer. It gets one already open instead.
   it('hands deck.gl the open COG rather than a URL for it to fetch itself', async () => {
     const { previewer } = previewFor();
     await previewer.preview();
@@ -159,7 +146,6 @@ describe('CogPreviewer', () => {
     expect(previewer.opened).toEqual([COG_URL]);
   });
 
-  // The header is read once. Rebuilding the layer for an opacity change must not read it again.
   it('keeps the COG open across a layer rebuild', async () => {
     const { previewer } = previewFor();
     await previewer.preview();
@@ -170,8 +156,6 @@ describe('CogPreviewer', () => {
     expect(previewer.overlay.lastLayers[0].props.geotiff).toBe(FAKE_GEOTIFF);
   });
 
-  // A COG that refuses to be read is a failed preview, so <ogm-preview> can say so - before this it
-  // was deck.gl's own problem and only turned up in the console
   it('fails the preview when the COG cannot be read', async () => {
     const { previewer } = previewFor();
     previewer.refusal = new Error('Failed to HEAD scan.tif');
@@ -187,8 +171,6 @@ describe('CogPreviewer', () => {
     expect(previewer.overlay.lastLayers[0].props.visible).toBe(true);
   });
 
-  // deck.gl takes both as layer props; FakeMap throws from either setter, so reaching for MapLibre
-  // instead would fail these outright
   describe('applying layer state', () => {
     it('sends opacity to deck.gl as a prop', async () => {
       const { previewer } = previewFor();
@@ -209,7 +191,6 @@ describe('CogPreviewer', () => {
       expect(previewer.overlay.lastLayers[0].props.visible).toBe(false);
     });
 
-    // An opacity of zero has to stop it being drawn, not just make it invisible
     it('treats a fully faded layer as hidden', async () => {
       const { previewer } = previewFor();
       await previewer.preview();
@@ -219,7 +200,6 @@ describe('CogPreviewer', () => {
       expect(previewer.overlay.lastLayers[0].props.visible).toBe(false);
     });
 
-    // Same id every time, so deck.gl updates the props in place and keeps the tiles it has decoded
     it('keeps the same layer id so deck.gl updates rather than reloads', async () => {
       const { previewer } = previewFor();
       await previewer.preview();
@@ -230,9 +210,6 @@ describe('CogPreviewer', () => {
     });
   });
 
-  // A scalar COG - single-band float or signed-integer data - draws through its own pipeline
-  // (src/lib/cog-pipeline.ts) rather than @developmentseed/deck.gl-geotiff's own, which
-  // refuses that data outright.
   describe('a scalar COG', () => {
     it("publishes the default ramp and the file's own value range on the layer", async () => {
       const { previewer } = previewFor();
@@ -261,10 +238,6 @@ describe('CogPreviewer', () => {
       expect(props.renderTile).toBeInstanceOf(Function);
     });
 
-    // getTileData and renderTile are unset either way - COGLayer's _parseGeoTIFF checks !this.props.getTileData
-    // || !this.props.renderTile to decide whether to infer a render pipeline itself, which either
-    // falsy value satisfies. deck.gl's own defaultProps happens to fill the two differently (null
-    // for one, plain undefined for the other); both are asserted so a change either way is caught.
     it('leaves getTileData and renderTile unset for an ordinary COG, so its own pipeline is inferred', async () => {
       const { previewer } = previewFor();
       await previewer.preview();
@@ -282,10 +255,6 @@ describe('CogPreviewer', () => {
       expect(previewer.overlay.lastLayers[0].props.updateTriggers).toEqual({ renderTile: [DEFAULT_COLOR_RAMP, -184.48, 607.27] });
     });
 
-    // The trap this test guards: drawDeckLayer rebuilds the layer object on every layer-state
-    // change, but deck.gl matches it by id and updates props in place rather than re-rendering from
-    // scratch - so without naming the ramp as a renderTile dependency, a swatch click would change
-    // nothing the user could see.
     it('changes updateTriggers when the ramp changes, so deck.gl actually redraws it', async () => {
       const { previewer } = previewFor();
       previewer.geotiffToLoad = FAKE_SCALAR_GEOTIFF;
@@ -309,8 +278,82 @@ describe('CogPreviewer', () => {
     });
   });
 
-  // Every COG on the page decodes through the same workers: a pool each would put a multiple of the
-  // pool size in workers on a results page of overview maps. See src/lib/decoder.ts.
+  describe("what a COG's values measure", () => {
+    const ELEVATION = { name: 'Elevation', unit: 'meters', datum: 'North American Vertical Datum of 1988' };
+
+    const metadataFor = (previewer: TestCogPreviewer) => {
+      let answer: (quantity: typeof ELEVATION | undefined) => void = () => {};
+      const read = new Promise<typeof ELEVATION | undefined>(resolve => (answer = resolve));
+      const resource = previewer['resource'] as CogResource;
+      resource.getQuantity = vi.fn(() => read);
+      return { answer, resource };
+    };
+
+    it('puts it on the layer when it has arrived by the time the layer is drawn', async () => {
+      const { previewer } = previewFor();
+      previewer.geotiffToLoad = FAKE_SCALAR_GEOTIFF;
+      metadataFor(previewer).answer(ELEVATION);
+      await previewer.preview();
+
+      expect(previewer.previewLayers[0].quantity).toEqual(ELEVATION);
+    });
+
+    it('puts it on the layer once it arrives after the layer is drawn, and says the layer changed', async () => {
+      const { previewer } = previewFor();
+      previewer.geotiffToLoad = FAKE_SCALAR_GEOTIFF;
+      const onLayersChanged = vi.fn();
+      previewer.onLayersChanged = onLayersChanged;
+      const { answer } = metadataFor(previewer);
+      await previewer.preview();
+      expect(previewer.previewLayers[0].quantity).toBeUndefined();
+
+      answer(ELEVATION);
+      await vi.waitFor(() => expect(onLayersChanged).toHaveBeenCalledTimes(1));
+      expect(previewer.previewLayers[0].quantity).toEqual(ELEVATION);
+    });
+
+    it('leaves an ordinary COG without one, whatever its metadata says', async () => {
+      const { previewer } = previewFor();
+      const onLayersChanged = vi.fn();
+      previewer.onLayersChanged = onLayersChanged;
+      const { answer } = metadataFor(previewer);
+      await previewer.preview();
+      answer(ELEVATION);
+      await Promise.resolve();
+
+      expect(previewer.previewLayers[0].quantity).toBeUndefined();
+      expect(onLayersChanged).not.toHaveBeenCalled();
+    });
+
+    it('leaves the layer as it is when the metadata says nothing', async () => {
+      const { previewer } = previewFor();
+      previewer.geotiffToLoad = FAKE_SCALAR_GEOTIFF;
+      const onLayersChanged = vi.fn();
+      previewer.onLayersChanged = onLayersChanged;
+      const { answer } = metadataFor(previewer);
+      await previewer.preview();
+      answer(undefined);
+      await Promise.resolve();
+
+      expect(previewer.previewLayers[0]).not.toHaveProperty('quantity');
+      expect(onLayersChanged).not.toHaveBeenCalled();
+    });
+
+    it('keeps it across a redraw', async () => {
+      const { map, previewer } = previewFor();
+      previewer.geotiffToLoad = FAKE_SCALAR_GEOTIFF;
+      metadataFor(previewer).answer(ELEVATION);
+      await previewer.preview();
+
+      await previewer.clearPreview();
+      metadataFor(previewer);
+      previewer.attach(map as unknown as MapLibreMap, style);
+      await previewer.preview();
+
+      expect(previewer.previewLayers[0].quantity).toEqual(ELEVATION);
+    });
+  });
+
   it('decodes through the pool shared with every other COG', () => {
     const { previewer } = previewFor();
     const { previewer: other } = previewFor();
@@ -318,10 +361,6 @@ describe('CogPreviewer', () => {
     expect(previewer.pool).toBe(other.pool);
   });
 
-  // @deck.gl/maplibre picks its view from the map's projection when its props are set and on
-  // 'styledata', and setProjection raises neither - only 'projectiontransition'. Left alone, the
-  // overlay keeps drawing through the GlobeView it was built with after a reader presses the globe
-  // button off, and the COG lands in the wrong place. See CogPreviewer.watchProjection.
   describe('when the map changes projection', () => {
     it('hands the overlay its layers again, which is what makes it re-read the projection', async () => {
       const { map, previewer } = previewFor();
@@ -334,8 +373,6 @@ describe('CogPreviewer', () => {
       expect(previewer.overlay.lastLayers).toHaveLength(1);
     });
 
-    // A theme change draws this preview again into a rebuilt style document, with no clearPreview
-    // between - so attach() runs twice on the same map and must not leave two listeners
     it('watches once however many times it is attached', async () => {
       const { map, previewer } = previewFor();
       previewer.attach(map as unknown as MapLibreMap, style);
@@ -353,20 +390,145 @@ describe('CogPreviewer', () => {
     });
   });
 
-  // This preview asked for a flat map until deck.gl-raster implemented a globe bounding volume for
-  // its tile traversal - see the note on CogPreviewer. Worth asserting rather than leaving to the
-  // inherited default: what it turns on is a globe button <ogm-map> would otherwise keep hidden, and
-  // the dependency that earned it is pinned to a prerelease something may yet move off.
+  describe('saying it is loading', () => {
+    const answers = (previewer: TestCogPreviewer, loaded: boolean) => Object.defineProperty(previewer.overlay.lastLayers[0], 'isLoaded', { get: () => loaded, configurable: true });
+
+    const loadingPreview = async () => {
+      const { map, previewer } = previewFor();
+      const onLoading = vi.fn();
+      previewer.onLoading = onLoading;
+      await previewer.preview();
+      return { map, previewer, onLoading };
+    };
+
+    it('says so while the tiles in view are on their way, and says when they are in', async () => {
+      const { map, previewer, onLoading } = await loadingPreview();
+
+      answers(previewer, false);
+      map.emit('render');
+      answers(previewer, true);
+      map.emit('render');
+
+      expect(onLoading.mock.calls).toEqual([[true], [false]]);
+    });
+
+    it('says each once, however many frames go by', async () => {
+      const { map, previewer, onLoading } = await loadingPreview();
+
+      answers(previewer, false);
+      map.emit('render');
+      map.emit('render');
+      map.emit('render');
+
+      expect(onLoading.mock.calls).toEqual([[true]]);
+    });
+
+    it('says nothing is loading once the reader switches the layer off', async () => {
+      const { map, previewer, onLoading } = await loadingPreview();
+      answers(previewer, false);
+      map.emit('render');
+
+      previewer.applyLayerState(new Map([['stanford-vq494qx9344-cog', { visible: false, opacity: 0.8 }]]));
+      answers(previewer, false);
+      map.emit('render');
+
+      expect(onLoading).toHaveBeenLastCalledWith(false);
+    });
+
+    it('says it is done when the preview is cleared mid-load, and stops listening', async () => {
+      const { map, previewer, onLoading } = await loadingPreview();
+      answers(previewer, false);
+      map.emit('render');
+
+      await previewer.clearPreview();
+
+      expect(onLoading.mock.calls).toEqual([[true], [false]]);
+      expect(map.listenerCount('render')).toEqual(0);
+    });
+
+    it('listens once however many times it is attached', async () => {
+      const { map, previewer } = previewFor();
+      previewer.attach(map as unknown as MapLibreMap, style);
+      await previewer.preview();
+
+      expect(map.listenerCount('render')).toEqual(1);
+    });
+  });
+
+  describe('beforeId', () => {
+    it('hands deck.gl the basemap layer to draw underneath', async () => {
+      const { map, previewer } = previewFor();
+      map.layers.set(defaultBeforeId, { id: defaultBeforeId, type: 'symbol' });
+      await previewer.preview();
+
+      expect(previewer.overlay.lastLayers[0].props.beforeId).toEqual(defaultBeforeId);
+    });
+
+    it("hands it nothing when the basemap has no layer by that name, so it's drawn on top", async () => {
+      const { previewer } = previewFor();
+      await previewer.preview();
+
+      expect(previewer.overlay.lastLayers[0].props.beforeId).toBeUndefined();
+    });
+
+    it('hands it nothing when told to draw on top', async () => {
+      const { map, previewer } = previewFor();
+      map.layers.set(defaultBeforeId, { id: defaultBeforeId, type: 'symbol' });
+      previewer.beforeId = '';
+      await previewer.preview();
+
+      expect(previewer.overlay.lastLayers[0].props.beforeId).toBeUndefined();
+    });
+
+    describe('drawn before the basemap has finished loading', () => {
+      it('hands the overlay its layer again once the map is idle', async () => {
+        const { map, previewer } = previewFor();
+        map.styleLoaded = false;
+        await previewer.preview();
+
+        const before = previewer.overlay.props.length;
+        map.styleLoaded = true;
+        map.emit('idle');
+
+        expect(previewer.overlay.props.length).toEqual(before + 1);
+        expect(previewer.overlay.lastLayers).toHaveLength(1);
+      });
+
+      it('waits once however many times it is drawn', async () => {
+        const { map, previewer } = previewFor();
+        map.styleLoaded = false;
+        await previewer.preview();
+        previewer.applyLayerState(new Map([['stanford-vq494qx9344-cog', { visible: true, opacity: 0.5 }]]));
+        previewer.applyLayerState(new Map([['stanford-vq494qx9344-cog', { visible: true, opacity: 0.4 }]]));
+
+        expect(map.listenerCount('idle')).toEqual(1);
+      });
+
+      it('stops waiting once the preview is cleared', async () => {
+        const { map, previewer } = previewFor();
+        map.styleLoaded = false;
+        await previewer.preview();
+        await previewer.clearPreview();
+
+        expect(map.listenerCount('idle')).toEqual(0);
+      });
+    });
+
+    it("doesn't wait for anything when the basemap has already loaded", async () => {
+      const { map, previewer } = previewFor();
+      await previewer.preview();
+
+      expect(map.listenerCount('idle')).toEqual(0);
+    });
+  });
+
   it('is drawn on the globe everything else is drawn on', () => {
     const { previewer } = previewFor();
 
     expect(previewer.projection).toEqual('globe');
-    // The same answer MapPreviewer gives every other map preview, RasterPreviewer standing in here
     expect(new RasterPreviewer(new CogResource('id', COG_URL)).projection).toEqual('globe');
   });
 
-  // Only the globe is a problem here. Unlike Allmaps, deck.gl is handed the whole view state and draws
-  // a tilted map correctly, so asking for a pitch limit would take away something that works.
   it('leaves the pitch alone, which it can be drawn under', () => {
     const { previewer } = previewFor();
 
@@ -389,7 +551,6 @@ describe('CogPreviewer', () => {
       const { previewer } = previewFor();
       await previewer.preview();
 
-      // deck.gl calls this back off the GeoTIFF metadata
       previewer.overlay.lastLayers[0].props.onGeoTIFFLoad({}, { geographicBounds: { west: -122.2, south: 37.4, east: -122.1, north: 37.5 } });
 
       expect(await previewer.getBounds()).toEqual([
@@ -397,16 +558,24 @@ describe('CogPreviewer', () => {
         [-122.1, 37.5],
       ]);
     });
+
+    it("still reports the COG's own extent when the record carried a bounding box", async () => {
+      const { previewer } = previewFor([
+        [0, 0],
+        [1, 1],
+      ]);
+      await previewer.preview();
+
+      previewer.overlay.lastLayers[0].props.onGeoTIFFLoad({}, { geographicBounds: { west: -122.2, south: 37.4, east: -122.1, north: 37.5 } });
+
+      expect(await previewer.getReportedBounds()).toEqual([
+        [-122.2, 37.4],
+        [-122.1, 37.5],
+      ]);
+    });
   });
 
-  // deck.gl only finds out a COG can't be drawn once its tiles start arriving, which is after
-  // preview() has resolved - so before this the map stayed empty and the reason only reached the
-  // console. See https://github.com/OpenGeoMetadata/ogm-viewer/issues/158, where a band-separate COG
-  // failed every tile this way.
   describe('a tile that fails', () => {
-    // Every route out of a failed tile says so on the console first - warned about when the preview
-    // survives it, reported as an error when it doesn't. That's the point of the code under test,
-    // not something to read in the output of a passing run.
     let consoleWarn: ReturnType<typeof vi.spyOn>;
     let consoleError: ReturnType<typeof vi.spyOn>;
 
@@ -420,7 +589,6 @@ describe('CogPreviewer', () => {
       consoleError.mockRestore();
     });
 
-    // One error per prop call, since deck.gl reports each failed tile separately
     const failTile = (previewer: TestCogPreviewer, error: unknown = new Error('Band-separate images not yet implemented.')) =>
       previewer.overlay.lastLayers[0].props.onTileError(error);
 
@@ -437,8 +605,6 @@ describe('CogPreviewer', () => {
       expect(reported).toEqual([new Error('Band-separate images not yet implemented.')]);
     });
 
-    // A COG can be sparse by design, and a hole in a preview the user can see is not worth replacing
-    // that preview with an error
     it('is left alone once some of the COG is on screen', async () => {
       const { previewer } = previewFor();
       const reported: unknown[] = [];
@@ -451,8 +617,6 @@ describe('CogPreviewer', () => {
       expect(reported).toEqual([]);
     });
 
-    // deck.gl drops a cancelled tile before calling back, but a decoder that notices the abort itself
-    // can still throw one - and a pan that abandons its reads is not a failed preview
     it('ignores an aborted read', async () => {
       const { previewer } = previewFor();
       const reported: unknown[] = [];
@@ -464,8 +628,6 @@ describe('CogPreviewer', () => {
       expect(reported).toEqual([]);
     });
 
-    // Nothing this preview draws passes through a MapLibre source, so a tile drawn is news only
-    // deck.gl has. See MapPreviewer.onDrawn.
     it('says so when deck.gl draws a tile, which nothing on the map would report', async () => {
       const { previewer } = previewFor();
       let drawn = 0;
@@ -490,7 +652,6 @@ describe('CogPreviewer', () => {
       expect(drawn).toBe(0);
     });
 
-    // A fresh load attempt starts over: the tiles of the last one are gone from the overlay
     it('fails again after the preview is drawn a second time', async () => {
       const { map, previewer } = previewFor();
       const reported: unknown[] = [];
@@ -506,15 +667,7 @@ describe('CogPreviewer', () => {
     });
   });
 
-  // deck.gl caches whatever getTileData returned and evicts it without disposing of anything inside,
-  // so the GPU textures the scalar pipeline uploads per tile are this previewer's to free - without
-  // that, panning across a large COG leaves every tile it ever decoded resident on the GPU for the
-  // life of the page. The default pipeline supplies no getTileData, so COGLayer frees the textures it
-  // uploads itself; only the scalar pipeline is this previewer's to free, and only it is tested here.
-  // See https://github.com/developmentseed/deck.gl-raster/pull/594.
   describe('a tile evicted from the cache', () => {
-    // Stands in for a luma.gl texture, recording whether it was freed - which is the whole of what
-    // these tests are asking about
     const fakeTexture = () => ({
       destroyed: 0,
       destroy() {
@@ -522,7 +675,6 @@ describe('CogPreviewer', () => {
       },
     });
 
-    // deck.gl hands the evicted tile back, decoded data and all, on `content`
     const unload = (previewer: TestCogPreviewer, content: unknown) => previewer.overlay.lastLayers[0].props.onTileUnload({ content });
 
     const scalarPreview = async () => {
@@ -543,10 +695,6 @@ describe('CogPreviewer', () => {
       expect(texture.destroyed).toEqual(1);
     });
 
-    // The ramp sprite is uploaded once per Device and shared by every scalar tile on the page - see
-    // the colormapTextures WeakMap in src/lib/cog-pipeline.ts. Freeing it along with the first tile
-    // evicted would leave every tile still on screen sampling a texture that no longer exists, and
-    // the WeakMap would go on handing the dead one to every tile decoded afterwards.
     it('leaves the colormap alone, which every other tile is still sampling', async () => {
       const previewer = await scalarPreview();
       const colormapTexture = fakeTexture();
@@ -556,11 +704,6 @@ describe('CogPreviewer', () => {
       expect(colormapTexture.destroyed).toEqual(0);
     });
 
-    // deck.gl evicts a tile still in flight as readily as a finished one, and one that failed never
-    // decoded to anything either - both arrive with nothing to free. This is why the previewer reads
-    // `content` rather than the `data` upstream's own example does: `data` answers a Promise while
-    // the tile is loading, and reaching through that for a texture would throw from inside deck.gl's
-    // cache resize.
     it('has nothing to free for a tile that never finished loading', async () => {
       const previewer = await scalarPreview();
 

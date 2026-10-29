@@ -1,12 +1,10 @@
 import { describe, it, expect } from '@stencil/vitest';
 import type { MapGeoJSONFeature } from 'maplibre-gl';
 
-import { dedupeFeatures, getFeatureTitle } from './features';
+import { dedupeFeatures, getFeatureTitle, propertyFilter } from './features';
 
 const SOURCE = 'ark-77981-gmgscj87k49-openindexmap';
 
-// An entry as an inspection answers with it: what names the feature, plus enough properties to tell
-// one entry's record from another's in the assertions
 const entry = (overrides: Partial<MapGeoJSONFeature>): MapGeoJSONFeature =>
   ({
     source: SOURCE,
@@ -80,10 +78,78 @@ describe('dedupeFeatures', () => {
   });
 });
 
-// Bright Angel as gov.usgs indexes it: fourteen editions of one sheet sharing an outline, listed oldest
-// first so the latest is drawn on top, with one label between them. MapLibre answers top down, layer by
-// layer - the label first, since it is drawn over everything, then the outlines and the fills, each
-// from the top of the stack down.
+describe('dedupeFeatures, for a tileset without ids', () => {
+  const HOT = 'hdx-c2334a9d-33ed-46ab-b239-cf99d985fa20';
+  const tile = (overrides: Partial<MapGeoJSONFeature>) =>
+    entry({ source: HOT, sourceLayer: 'cultural_places', id: undefined, properties: { id: 'way/23630366', name: 'Wat Pho' }, ...overrides });
+
+  it('collapses a feature the map drew in more than one piece', () => {
+    const tileA = tile({});
+    const tileB = tile({});
+    const tileC = tile({});
+
+    expect(dedupeFeatures([tileA, tileB, tileC])).toEqual([tileA]);
+  });
+
+  it('collapses a feature reported once per style layer that draws it', () => {
+    const fill = tile({ layer: { id: `${HOT}-polygons`, type: 'fill', source: HOT } as MapGeoJSONFeature['layer'] });
+    const outline = tile({ layer: { id: `${HOT}-polygon-outlines`, type: 'line', source: HOT } as MapGeoJSONFeature['layer'] });
+
+    expect(dedupeFeatures([fill, outline])).toEqual([fill]);
+  });
+
+  it('reads two tiles’ pieces of a feature alike, whatever order each lists its properties in', () => {
+    const tileA = tile({ properties: { id: 'way/23630366', name: 'Wat Pho' } });
+    const tileB = tile({ properties: { name: 'Wat Pho', id: 'way/23630366' } });
+
+    expect(dedupeFeatures([tileA, tileB])).toEqual([tileA]);
+  });
+
+  it('keeps features that say different things', () => {
+    const temple = tile({});
+    const shrine = tile({ properties: { id: 'way/210284649', name: 'Wat Pho' } });
+
+    expect(dedupeFeatures([temple, shrine])).toEqual([temple, shrine]);
+  });
+
+  it('gives a label’s entry way to the feature it names', () => {
+    const label = tile({ layer: { id: `${HOT}-polygon-labels`, type: 'symbol', source: HOT } as MapGeoJSONFeature['layer'] });
+    const fill = tile({});
+
+    expect(dedupeFeatures([label, fill])).toEqual([fill]);
+  });
+
+  it('keeps every feature with nothing to tell it by', () => {
+    const one = tile({ properties: {} });
+    const two = tile({ properties: {} });
+
+    expect(dedupeFeatures([one, two])).toEqual([one, two]);
+  });
+});
+
+describe('propertyFilter', () => {
+  const feature = (properties: Record<string, unknown>) => entry({ id: undefined, sourceLayer: 'cultural_places', properties });
+
+  it('matches every property a filter can compare, in an order that doesn’t depend on the tile', () => {
+    expect(propertyFilter(feature({ name: 'Wat Pho', id: 'way/23630366', capacity: 200, open: true }))).toEqual([
+      'all',
+      ['==', ['get', 'capacity'], 200],
+      ['==', ['get', 'id'], 'way/23630366'],
+      ['==', ['get', 'name'], 'Wat Pho'],
+      ['==', ['get', 'open'], true],
+    ]);
+  });
+
+  it('leaves out what a filter can’t compare', () => {
+    expect(propertyFilter(feature({ id: 'way/23630366', tags: { tourism: 'attraction' }, nothing: null }))).toEqual(['all', ['==', ['get', 'id'], 'way/23630366']]);
+  });
+
+  it('has no filter for a feature with nothing to compare, rather than one matching everything', () => {
+    expect(propertyFilter(feature({}))).toBeUndefined();
+    expect(propertyFilter(feature({ tags: {} }))).toBeUndefined();
+  });
+});
+
 describe('dedupeFeatures, for a stack under one label', () => {
   const EDITIONS = [19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6];
 
@@ -94,7 +160,6 @@ describe('dedupeFeatures, for a stack under one label', () => {
   const besideLabel = () => [...EDITIONS.map(outline), ...EDITIONS.map(fill)];
   const ids = (features: MapGeoJSONFeature[]) => features.map(feature => feature.id);
 
-  // Placement decides which edition gets the label, and it was the oldest: the first in the document
   it('lists the stack from the top, whichever edition the label names', () => {
     expect(ids(dedupeFeatures([label(6), ...besideLabel()]))).toEqual(EDITIONS);
     expect(ids(dedupeFeatures([label(12), ...besideLabel()]))).toEqual(EDITIONS);
@@ -104,7 +169,6 @@ describe('dedupeFeatures, for a stack under one label', () => {
     expect(dedupeFeatures([label(6), ...besideLabel()])).toEqual(dedupeFeatures(besideLabel()));
   });
 
-  // A point's label sits above the point, and a long sheet label runs out over its neighbours
   it('keeps a feature the click reached only through its label where the label put it', () => {
     const neighbour = label(23);
 
@@ -125,9 +189,6 @@ describe('getFeatureTitle', () => {
     expect(getFeatureTitle(entry({ id: 12, properties: { TRACT: '000300' } }))).toEqual('Feature');
   });
 
-  // The bug this row exists to avoid: an /identify response has no features until we ask for them, so
-  // we number the answer to have something to draw the selection from, and the first of them read as
-  // "Feature 0" every time - a number the reader has no way to recognize.
   it('says nothing of an id nobody put there', () => {
     expect(getFeatureTitle(entry({ id: 0, properties: { Pixel: '12' } }))).toEqual('Feature');
   });

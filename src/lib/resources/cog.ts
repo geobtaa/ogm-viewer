@@ -1,21 +1,32 @@
+import type { LngLatBoundsLike } from 'maplibre-gl';
+
+import { rasterQuantity, type Quantity } from '../quantity';
+import type { RequestTransform } from '../request';
 import RasterResource from './raster';
 import type { ResourceKind } from './resource';
 
 export default class CogResource extends RasterResource {
   readonly kind: ResourceKind = 'cog';
 
+  readonly fgdcUrl?: string;
+
+  constructor(id: string, url: string, bounds?: LngLatBoundsLike, requestTransform?: RequestTransform, fgdcUrl?: string) {
+    super(id, url, bounds, requestTransform);
+    this.fgdcUrl = fgdcUrl;
+  }
+
   label() {
     return 'Cloud Optimized GeoTIFF';
   }
 
-  // COGs have no specific scheme identifier for MapLibre
+  async getQuantity(): Promise<Quantity | undefined> {
+    return await rasterQuantity(this.fgdcUrl, this.requestTransform);
+  }
+
   getScheme() {
     return undefined;
   }
 
-  // The previewer handles this – we can't get bounds without knowing if we
-  // need to reproject, and pulling that capability up to this layer would
-  // be inefficient because all of a record's Resources are eagerly loaded.
   async getBounds() {
     return super.getBounds();
   }

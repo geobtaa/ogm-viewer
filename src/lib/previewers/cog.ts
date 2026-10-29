@@ -1,4 +1,4 @@
-import { MapLibreOverlay as DeckOverlay } from '@deck.gl/maplibre';
+import type { MapLibreOverlay as DeckOverlay } from '@deck.gl/maplibre';
 import { COGLayer } from '@developmentseed/deck.gl-geotiff';
 import type { DecoderPool, GeoTIFF } from '@developmentseed/geotiff';
 import type { AddLayerObject, LngLatBoundsLike, MapLibreMap } from 'maplibre-gl';
@@ -8,72 +8,40 @@ import { isScalarSampleFormat, releaseScalarTile, scalarGetTileData, scalarRange
 import type CogResource from '../resources/cog';
 import { DEFAULT_COLOR_RAMP } from '../colormap';
 import { decoderPool } from '../decoder';
+import { deckOverlay } from '../deck-overlay';
 import { openGeoTIFF } from '../geotiff';
 import { isLayerDrawn, type LayerState, type PreviewStyleLayer } from '../layers';
+import type { Quantity } from '../quantity';
 import type { MapLibreStyle } from '../themes/maplibre';
 
-// How long to wait for deck.gl to read the GeoTIFF's header when the record declared no bounding box
-// of its own. A COG that never answers must not leave the map spinning with nowhere to point.
 const HEADER_TIMEOUT = 10_000;
 
-// The tile deck.gl hands to onTileUnload, narrowed to the one field this file reads. Only the scalar
-// pipeline below needs it: its getTileData uploads the tile's textures, so freeing them on eviction
-// is ours to do (deck.gl caches whatever getTileData returned and drops the reference without
-// disposing it). The default pipeline's textures are freed by COGLayer itself once no getTileData is
-// supplied - see https://github.com/developmentseed/deck.gl-raster/pull/594.
-//
-// Deliberately content, not the data upstream's own example reaches for: data is a getter that
-// answers a Promise while the tile is still loading, and deck.gl evicts a tile still in flight as
-// readily as a finished one - so `tile.data?.texture.destroy()` would throw on exactly that tile,
-// from inside deck.gl's own cache resize. content is the decoded tile, or null for one that never
-// got that far.
 type UnloadedTile = { content: unknown };
 
-// Draws a Cloud Optimized GeoTIFF with deck.gl, which warps it as it draws - so a COG is drawn
-// whatever projection it is in, not only one already in Web Mercator.
-//
-// Not a style layer: deck.gl draws through an overlay it adds to the map as a control, so there is
-// nothing for MapLibre to style and its own layer registry never learns the id. That is why both the
-// style layer type and applyStyleLayerState below are overridden - see MapPreviewer.
 export default class CogPreviewer extends MapPreviewer {
   declare protected resource: CogResource;
 
-  // deck.gl tells us when a tile is drawn, which nothing on the map would; see reportTileDrawn
   readonly reportsDrawing = true;
 
-  // The overlay deck.gl draws into, shared with any other deck previewer on the same map
   protected deckOverlay: DeckOverlay | undefined;
 
-  // Built once and reused: recreating it on every opacity change would throw away the decoder
-  // workers along with it, and this layer is rebuilt on each of those. Shared with every other COG
-  // on the page - see src/lib/decoder.ts.
   protected decoderPool: DecoderPool | undefined;
 
-  // What the user has asked for, held because deck.gl takes visibility and opacity as layer props,
-  // so changing either means handing it the layer again with the rest of the props unchanged.
-  // Distinct from MapPreviewer's own layerState memo, which is keyed by layer and private to it.
   protected drawnState: LayerState | undefined;
 
-  // Resolves with the COG's own extent once deck.gl has read its header
   protected geotiffBoundsLoaded: Promise<LngLatBoundsLike | undefined> | undefined;
   private resolveGeotiffBounds: (bounds: LngLatBoundsLike | undefined) => void = () => {};
 
-  // The COG, opened by us rather than by deck.gl, so that the requests reading it carry whatever the
-  // resource's transform asks for. Held so that an opacity change rebuilds the layer around the same
-  // open file instead of reading its header again.
   protected geotiff: GeoTIFF | undefined;
 
-  // Set once per preview(), and only for a single-band COG of floats or signed integers - the kind
-  // @developmentseed/deck.gl-geotiff's own render pipeline refuses to draw at all. Its presence is
-  // what createLayers and createDeckLayer below both key off of to decide whether this COG draws
-  // through our own scalar pipeline (src/lib/cog-pipeline.ts) instead of upstream's;
-  // there is deliberately nowhere else that re-derives the same answer.
   protected valueRange: ScalarRange | undefined;
 
-  // Whether any tile of this COG has been drawn, which is what tells a COG that can't be drawn at
-  // all from one tile of it that couldn't. Reset per attach, alongside everything else a fresh load
-  // attempt starts over. See reportTileError.
+  protected quantity: Quantity | undefined;
+
   protected anyTileDrawn = false;
+
+  protected deckLayer: COGLayer | COGLayer<ScalarTileData> | undefined;
+  private loading = false;
 
   attach(map: MapLibreMap, style: MapLibreStyle): this {
     super.attach(map, style);
@@ -83,31 +51,11 @@ export default class CogPreviewer extends MapPreviewer {
     this.geotiffBoundsLoaded = new Promise(resolve => (this.resolveGeotiffBounds = resolve));
     this.anyTileDrawn = false;
     this.watchProjection();
+    this.watchLoading();
     return this;
   }
 
-  /**
-   * Tell the overlay the map's projection changed, because MapLibre doesn't tell it in a way it
-   * hears.
-   *
-   * @deck.gl/maplibre decides between a MapView and a GlobeView by asking the map which projection
-   * it is in, and it asks in two places: whenever its own props are set, and on 'styledata'.
-   * setProjection() announces itself as 'projectiontransition' and raises no 'styledata' at all, so
-   * a reader pressing the globe button off leaves the overlay drawing through the GlobeView it was
-   * built with while MapLibre has gone back to drawing flat. The COG is then drawn in the wrong
-   * place - 12px out at zoom 4, 80px at zoom 3 - and stays there: no pan, zoom or later frame puts
-   * it back, because none of them is a style change either.
-   *
-   * Handing the overlay its layers again is the nudge, since setProps is one of the two places it
-   * re-reads the projection. Cheap: deck.gl matches the layer by id and updates props in place, so
-   * the tiles already decoded are kept.
-   *
-   * Remove this when @deck.gl/maplibre watches 'projectiontransition' itself.
-   *
-   * Taken off first for the same reason EsriFeatureLayerPreviewer does it: a theme change draws
-   * this preview again into a rebuilt style document with no clearPreview between, and that must
-   * leave one listener rather than two.
-   */
+  // deck.gl does not listen for projectiontransition; reapply its props to update the viewport.
   protected watchProjection() {
     this.map.off('projectiontransition', this.handleProjectionTransition);
     this.map.on('projectiontransition', this.handleProjectionTransition);
@@ -115,8 +63,6 @@ export default class CogPreviewer extends MapPreviewer {
     this.map.once('remove', this.stopWatchingProjection);
   }
 
-  // Bound instance properties rather than methods, so off() has the same function to remove that
-  // on() was given
   private stopWatchingProjection = () => {
     if (!this.attached) return;
     this.map.off('projectiontransition', this.handleProjectionTransition);
@@ -127,24 +73,44 @@ export default class CogPreviewer extends MapPreviewer {
     this.drawDeckLayer();
   };
 
-  // Nothing for MapLibre to fetch or draw: deck.gl reads the COG itself, through the source opened in
-  // preview() rather than through MapLibre's transformRequest.
+  protected syncLoading() {
+    const drawn = this.drawnState !== undefined && isLayerDrawn(this.drawnState);
+    this.setLoading(drawn && this.deckLayer !== undefined && !this.deckLayer.isLoaded);
+  }
+
+  private setLoading(loading: boolean) {
+    if (loading === this.loading) return;
+    this.loading = loading;
+    this.onLoading?.(loading);
+  }
+
+  protected watchLoading() {
+    this.map.off('render', this.handleRender);
+    this.map.on('render', this.handleRender);
+    this.map.off('remove', this.stopWatchingLoading);
+    this.map.once('remove', this.stopWatchingLoading);
+  }
+
+  private stopWatchingLoading = () => {
+    if (!this.attached) return;
+    this.map.off('render', this.handleRender);
+    this.map.off('remove', this.stopWatchingLoading);
+  };
+
+  private handleRender = () => this.syncLoading();
+
   protected async createSources(): Promise<[]> {
     return [];
   }
 
-  // Registers the logical layer so the layers panel can offer it, but hands MapLibre no layer of its
-  // own - deck.gl's overlay is already on the map, and the layer goes to that instead.
   protected async createLayers(): Promise<AddLayerObject[]> {
     this.previewLayers.push({
       id: this.getLayerId(),
       title: this.resource.label(),
       defaultOpacity: this.style.opacity,
       styleLayers: [{ id: this.getLayerId(), type: 'custom' }],
-      // Only present for a scalar COG - see valueRange above - which is what marks the layer as
-      // rampable to the panel and to resolveLayerState. this.valueRange is already known by the
-      // time this runs; see preview() for why the ordering has to be that way round.
       ...(this.valueRange && { defaultColorRamp: DEFAULT_COLOR_RAMP, colorRampRange: this.valueRange }),
+      ...(this.valueRange && this.quantity && { quantity: this.quantity }),
     });
 
     return [];
@@ -154,20 +120,25 @@ export default class CogPreviewer extends MapPreviewer {
     return `${this.resource.id}-cog`;
   }
 
-  // Opening the COG here rather than leaving deck.gl to do it is what lets a restricted one be drawn:
-  // deck.gl only reads a URL with a plain fetch. It also means a COG that refuses to be read fails the
-  // preview, so the alert names it, where before it only turned up in the console.
-  //
-  // Both reads happen before super.preview() now, not after: super.preview() is what calls
-  // createLayers(), and that needs to already know whether this COG is scalar - and its value range,
-  // if so - to publish the ramp defaults the layer starts with. A COG that fails to open still fails
-  // preview() the same way either order; the difference is that it no longer leaves a phantom layer
-  // registered for a COG that was never actually readable.
+  // Read the scalar range before createLayers publishes the ramp defaults.
   async preview(): Promise<void> {
+    void this.readQuantity();
+
     this.geotiff = await this.loadGeoTIFF();
     this.valueRange = isScalarSampleFormat(this.geotiff.cachedTags) ? await scalarRange(this.geotiff, this.decoderPool) : undefined;
     await super.preview();
     this.drawDeckLayer();
+  }
+
+  protected async readQuantity() {
+    const quantity = await this.resource.getQuantity();
+    if (!quantity) return;
+    this.quantity = quantity;
+
+    const layer = this.previewLayers.find(previewLayer => previewLayer.id === this.getLayerId());
+    if (!layer?.colorRampRange || layer.quantity) return;
+    layer.quantity = quantity;
+    this.onLayersChanged?.();
   }
 
   protected async loadGeoTIFF(): Promise<GeoTIFF> {
@@ -176,44 +147,43 @@ export default class CogPreviewer extends MapPreviewer {
 
   async clearPreview() {
     this.stopWatchingProjection();
+    this.stopWatchingLoading();
+    this.setLoading(false);
+    if (this.attached) this.map.off('idle', this.handleIdle);
     await super.clearPreview();
     this.deckOverlay?.setProps({ layers: [] });
+    this.deckLayer = undefined;
     this.geotiff = undefined;
     this.valueRange = undefined;
   }
 
-  // MapLibre knows nothing about this layer, so the inherited version - which starts by looking it
-  // up in the style - would silently do nothing. deck.gl takes both as props instead.
   protected applyStyleLayerState(_styleLayer: PreviewStyleLayer, state: LayerState) {
     this.drawnState = state;
     this.drawDeckLayer();
   }
 
-  // Hand deck.gl the layer as it should now be drawn. Rebuilt rather than mutated because that is
-  // how deck.gl takes changes; it matches the layer by id and updates the props in place, so the
-  // tiles already decoded are kept rather than fetched again.
   protected drawDeckLayer() {
     if (!this.deckOverlay || !this.drawnState || !this.geotiff) return;
-    this.deckOverlay.setProps({ layers: [this.createDeckLayer(this.geotiff, this.drawnState)] });
+    this.deckLayer = this.createDeckLayer(this.geotiff, this.drawnState);
+    this.deckOverlay.setProps({ layers: [this.deckLayer] });
+    if (!this.map.isStyleLoaded()) this.placeOnceIdle();
   }
 
-  // COGLayer's own generic parameter tracks the shape getTileData/renderTile produce and consume,
-  // and the two branches below produce different shapes - so each is its own `new COGLayer(...)`
-  // rather than one call with the pair conditionally spread into its props. A single call can't be
-  // typed for both at once, and building the discriminated union COGLayerDataProps actually wants by
-  // hand would say the same thing this does, at more length.
+  // deck.gl only honors beforeId once the basemap is fully loaded, so place the layer again on idle.
+  protected placeOnceIdle() {
+    this.map.off('idle', this.handleIdle);
+    this.map.once('idle', this.handleIdle);
+  }
+
+  private handleIdle = () => {
+    this.drawDeckLayer();
+  };
+
   protected createDeckLayer(geotiff: GeoTIFF, state: LayerState): COGLayer | COGLayer<ScalarTileData> {
-    // Not this.geotiff: the layer this becomes is drawn from whichever GeoTIFF the caller handed
-    // over, and drawDeckLayer's caller is always that same field - the distinction only matters for
-    // a test building a layer directly. this.valueRange is the field that matters, and is safe to
-    // read as-is: it's set from this same geotiff in preview(), and cleared with it in
-    // clearPreview(), so the two never point at different files.
     const range = this.valueRange;
 
     const shared = {
       id: this.getLayerId(),
-      // The open COG, not a URL: handed one of those, deck.gl opens it with a plain fetch that no
-      // transform can reach, which is what would leave a restricted COG undrawable.
       geotiff,
       visible: isLayerDrawn(state),
       opacity: state.opacity,
@@ -226,60 +196,31 @@ export default class CogPreviewer extends MapPreviewer {
       },
       onTileLoad: () => this.reportTileDrawn(),
       onTileError: (error: unknown) => this.reportTileError(error),
-      // On a globe the warped raster is coplanar with MapLibre's own sphere and shares the depth
-      // buffer it draws into, so the two z-fight. A depth bias doesn't reach it - MapLibre encodes
-      // globe depth its own way - so the depth test is skipped entirely and the far hemisphere is
-      // hidden by winding instead. 'back' is right for an interleaved overlay on MapLibre; a deck.gl
-      // _GlobeView standing on its own would want 'front'. See visgl/deck.gl#9592.
+      // Skip shared globe depth testing to avoid z-fighting; back-face culling hides the far hemisphere.
       parameters: { depthCompare: 'always' as const, cullMode: 'back' as const },
       pool: this.decoderPool,
+      beforeId: this.resolvedBeforeId,
     };
 
-    // No getTileData/renderTile: deck.gl-geotiff runs its own inferred pipeline, and - because none
-    // is supplied - COGLayer frees the textures that pipeline uploads (samples and mask) itself on
-    // eviction, so there is no onTileUnload to add here. See the PR linked from UnloadedTile above.
-    // DataT is left to infer: with nothing referencing it in these props it falls back to COGLayer's
-    // own default, which is exactly the inferred pipeline's tile shape.
     if (!range) return new COGLayer({ ...shared });
 
     const ramp = state.colorRamp ?? DEFAULT_COLOR_RAMP;
-    // Explicit type argument: getTileData sits inside a union of prop shapes that TypeScript won't
-    // infer DataT through, so DataT is named rather than left to collapse to MinimalTileData.
     return new COGLayer<ScalarTileData>({
       ...shared,
       getTileData: scalarGetTileData,
       renderTile: scalarRenderTile(ramp, range),
-      // The other half of scalarGetTileData: what it uploaded per tile, freed once deck.gl is done
-      // with the tile. See releaseScalarTile for which of the tile's two textures that is.
       onTileUnload: (tile: UnloadedTile) => releaseScalarTile(tile.content as ScalarTileData | null),
-      // Without this, a ramp swatch click would do nothing visible: drawDeckLayer rebuilds the
-      // layer object on every layer-state change, but deck.gl matches it by id and updates props in
-      // place rather than re-rendering from scratch, so the inner TileLayer keeps whichever shader
-      // pipeline it already rendered with unless told a dependency of renderTile changed. Naming
-      // renderTile's own dependencies here, rather than getTileData's: nothing about fetching or
-      // decoding a tile depends on the ramp, only on how the decoded value is drawn.
+      // Invalidate rendering when the ramp changes while retaining fetched and decoded tiles.
       updateTriggers: { renderTile: [ramp, ...range] },
     });
   }
 
-  // One tile drawn answers two questions at once: it tells a later failure that this COG is on the
-  // map after all, so the failure is a hole rather than an absence (see reportTileError), and it
-  // tells whoever is waiting on this preview that it need not keep waiting.
   protected reportTileDrawn() {
     this.anyTileDrawn = true;
     this.onDrawn?.();
   }
 
-  // A COG can only fail once its tiles start arriving, which is after preview() has resolved - so a
-  // file deck.gl refuses to draw used to leave the map empty with the reason only in the console.
-  // deck.gl reports each such tile here; overriding it also takes over from its own handler, which
-  // logs every one of them.
-  //
-  // Only the first failure of a COG that has drawn nothing is worth an alert. A COG can be sparse by
-  // design, and a tile that failed among tiles that didn't means a hole in a preview the user can
-  // see rather than a preview that isn't there - not worth replacing with an error. deck.gl drops a
-  // cancelled tile before calling back, so a pan that abandons its reads never arrives here at all,
-  // but a decoder that notices the abort itself can still throw one.
+  // Only report failure before any tile draws; later tile errors leave a usable, potentially sparse map.
   protected reportTileError(error: unknown) {
     if ((error as { name?: unknown } | null)?.name === 'AbortError') return;
 
@@ -292,31 +233,20 @@ export default class CogPreviewer extends MapPreviewer {
     this.onError?.(error);
   }
 
-  // The pool every COG on the page decodes through, workers and all - see src/lib/decoder.ts. Asked
-  // for through a method of its own so a test can hand this previewer a pool instead.
-  // See: https://developmentseed.org/deck.gl-raster/api/geotiff/type-aliases/DecoderPoolOptions/
   protected createDecoderPool(): DecoderPool {
     return decoderPool();
   }
 
-  // The record's own bounding box when it has one, since that needs no waiting. Otherwise the COG's,
-  // which means waiting on deck.gl to read its header.
   async getBounds(): Promise<LngLatBoundsLike | undefined> {
-    const declared = await super.getBounds();
-    if (declared) return declared;
+    return (await super.getBounds()) ?? (await this.getReportedBounds());
+  }
 
+  async getReportedBounds(): Promise<LngLatBoundsLike | undefined> {
     const timeout = new Promise<undefined>(resolve => setTimeout(() => resolve(undefined), HEADER_TIMEOUT));
     return await Promise.race([this.geotiffBoundsLoaded ?? timeout, timeout]);
   }
 
-  // The overlay every deck previewer on this map draws into. MapLibre offers no way to ask what
-  // controls it already has, so this reads the private list rather than adding a second overlay.
   protected getDeckOverlay(): DeckOverlay {
-    const existing = this.map._controls.find(control => control instanceof DeckOverlay);
-    if (existing) return existing;
-
-    const overlay = new DeckOverlay({ interleaved: true });
-    this.map.addControl(overlay);
-    return overlay;
+    return deckOverlay(this.map);
   }
 }

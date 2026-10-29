@@ -30,3 +30,6 @@ UserInterfaceState.xcuserstate
 
 coverage/
 test-support/
+
+test-results/
+playwright-report/

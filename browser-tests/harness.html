@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><title>OGM integration fixture</title>
+  <style>
+    body {
+      margin: 20px;
+      font: 16px system-ui;
+    }
+    ogm-viewer {
+      display: block;
+      height: 600px;
+      width: 800px;
+    }
+    output {
+      display: block;
+      overflow-wrap: anywhere;
+    }
+    #events {
+      display: none;
+    }
+  </style>
+  <h1>OGM integration fixture</h1>
+  <label
+    >Fixture
+    <select id="fixture">
+      <option>good</option>
+      <option>v2</option>
+      <option>duplicate</option>
+      <option>multi-image</option>
+      <option>first-fails</option>
+      <option>later-fails</option>
+      <option>unavailable</option>
+      <option>mixed</option>
+      <option>arcgis</option>
+      <option>location</option>
+    </select></label
+  >
+  <label
+    >Page
+    <select id="page"></select></label
+  ><button id="stale">Send stale navigation</button>
+  <ogm-viewer></ogm-viewer
+  ><output id="selection"></output
+  ><output id="events"></output
+  ><output id="ready"></output>
+  <script type="module">
+    import '../dist/components/ogm-viewer.js';
+    import { OgmRecord } from '../dist/components/index.js';
+    const viewer = document.querySelector('ogm-viewer');
+    const defaults = new URLSearchParams(location.search).has('defaults');
+    if (!defaults) for (const name of ['omit-location', 'hide-menubar', 'prefer-manifest', 'hide-single-tab']) viewer.setAttribute(name, '');
+    viewer.setAttribute('light-basemap', `${location.origin}/fixtures/style.json`);
+    let active, selected, oldNavigation;
+    const images = new Map(),
+      events = [];
+    function publish() {
+      selected = active?.renderer === 'image' ? images.get(active.previewId) : null;
+      document.querySelector('#selection').textContent = JSON.stringify({ active, selected });
+      const picker = document.querySelector('#page');
+      picker.replaceChildren(...(selected?.sequence ?? []).map(entry => new Option(`Image ${entry.index + 1}`, entry.index)));
+      picker.value = String(selected?.pageIndex ?? 0);
+    }
+    viewer.addEventListener('previewChange', event => {
+      active = event.detail;
+      publish();
+    });
+    viewer.addEventListener('imageChange', event => {
+      images.set(event.detail.previewId, event.detail);
+      events.push(event.detail);
+      document.querySelector('#events').textContent = JSON.stringify(events);
+      publish();
+    });
+    viewer.addEventListener('mapIdle', () => {
+      document.querySelector('#ready').textContent = 'Map loaded';
+    });
+    function navigate(request) {
+      viewer.dispatchEvent(new CustomEvent('imageNavigationRequest', { detail: request }));
+    }
+    document.querySelector('#page').onchange = event => {
+      const page = selected.sequence.find(page => page.index === Number(event.target.value));
+      if (page) {
+        oldNavigation = { ...active, ...page };
+        navigate(oldNavigation);
+      }
+    };
+    document.querySelector('#stale').onclick = () => navigate(oldNavigation);
+    async function load(scenario) {
+      images.clear();
+      active = null;
+      publish();
+      document.querySelector('#ready').textContent = '';
+      const references = {};
+      if (!['arcgis', 'location'].includes(scenario)) {
+        references['http://iiif.io/api/image'] = `${location.origin}/fixtures/iiif/single/info.json`;
+        references['http://iiif.io/api/presentation#manifest'] = `${location.origin}/fixtures/manifest/${scenario === 'mixed' ? 'good' : scenario}`;
+      }
+      if (['arcgis', 'mixed'].includes(scenario)) references['urn:x-esri:serviceType:ArcGIS#FeatureLayer'] = `${location.origin}/fixtures/FeatureServer/0`;
+      await viewer.loadRecord(
+        new OgmRecord({
+          id: scenario,
+          dct_title_s: `Fixture ${scenario}`,
+          gbl_resourceClass_sm: ['Maps'],
+          gbl_mdVersion_s: 'Aardvark',
+          dct_accessRights_s: 'Public',
+          locn_geometry: 'ENVELOPE(-2,2,2,-2)',
+          dct_references_s: JSON.stringify(references),
+        }),
+      );
+    }
+    document.querySelector('#fixture').onchange = event => load(event.target.value);
+    const initial = new URLSearchParams(location.search).get('fixture') ?? 'good';
+    document.querySelector('#fixture').value = initial;
+    await load(initial);
+  </script>
+</html>

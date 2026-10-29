@@ -423,3 +423,14 @@ the record. Explicit previewer order is preserved.
 Set `hide-single-tab` to omit navigation when only one preview is visible.
 Panels remain mounted when visibility changes, preserving their canvas state.
 Both options default to false; consumers opt in to these presentation choices.
+
+### Browser integration checks
+
+After `npm ci` (which builds the viewer), run `npx playwright install chromium`
+and `npm run test:browser`. The suite serves the compiled components and local
+IIIF v2/v3 manifests, image tiles, ArcGIS features, and a minimal basemap. Decorative
+OpenSeadragon icons are fulfilled locally too; unexpected external requests fail.
+It covers selection and navigation, repeated images, multiple images per canvas,
+initial fallback, later-page failures, record changes, first-frame tab visibility,
+default embedding behavior, and real MapLibre rendering and feature inspection.
+CI retains traces and screenshots for failed tests. No live catalog service is required.

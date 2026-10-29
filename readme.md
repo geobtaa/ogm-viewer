@@ -354,3 +354,50 @@ git push origin vX.Y.Z
 ```
 
 The `Release` workflow checks that the tag and `package.json` agree, lints, tests, publishes to npm, and drafts the GitHub release with generated notes. It authenticates with npm over OIDC using [trusted publishing](https://docs.npmjs.com/trusted-publishers).
+
+### Following the active image
+
+Listen on `<ogm-viewer>` for `previewChange` and `imageChange`. Both events bubble
+and are composed, crossing component shadow roots. Their shared identity is
+`{ previewId, resourceId, resourceUrl, renderer }`, where `resourceId` is the OGM
+record ID and `renderer` is `image` or `map`.
+
+`previewChange` reports the initial active preview, tab changes, and `null` when
+there are no previews. `imageChange` adds `image: { url, index, count, occurrence }` after an
+image opens, or `image: null` while loading, changing page, closing, or failing.
+`index` is zero-based in the image sequence; it is not a IIIF canvas index.
+`occurrence` is the zero-based occurrence of that URL within the sequence, so
+repeated scans can be distinguished. `url` is the tile source URL supplied by the previewer, normally an IIIF
+`info.json` URL. Sources that cannot be represented by a URL report `null`.
+
+Each image preview emits its own events, including previews in hidden tabs.
+Applications should remember the latest image per `previewId` and display only
+the selection belonging to the active `previewChange`. This also handles an
+image event arriving before the initial preview event. A map preview has no
+active image. Clear cached selections when replacing the record.
+
+`imageChange` also includes `sequence: [{ url, index, occurrence }]` and
+`pageIndex`. The sequence retains original viewer indices, excluding sources
+that cannot be represented by a URL. It remains available during page changes,
+even while `image` is null.
+
+To select a page, dispatch `imageNavigationRequest` on `<ogm-viewer>` with the
+preview identity plus an `index` and `url` from that sequence:
+
+```js
+viewer.dispatchEvent(
+  new CustomEvent('imageNavigationRequest', {
+    detail: { previewId, resourceId, resourceUrl, renderer: 'image', index, url },
+  }),
+);
+```
+
+Only the addressed image preview responds; mismatched records, URLs, preview IDs,
+and out-of-bounds indices are ignored. Keep UI state driven by `imageChange`,
+which reports the loading transition and eventual image. Standalone `<ogm-image>`
+consumers dispatch the request on that element instead.
+
+The payload types `PreviewSelection`, `ImageSelection`, `ImageSequenceEntry`,
+and `ImageNavigation` are exported from `ogm-viewer/lib`.
+
+`image.service` optionally contains the loaded IIIF service ID, Image API version, dimensions, profile, advertised sizes, and size limits. It clears with `image: null`; consumers need not fetch the manifest again.

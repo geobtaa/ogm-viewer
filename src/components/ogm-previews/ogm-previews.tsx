@@ -1,9 +1,10 @@
-import { Component, Element, Event, EventEmitter, Host, Prop, State, Watch, h } from '@stencil/core';
+import { Component, Element, Event, EventEmitter, Host, Listen, Prop, State, Watch, h } from '@stencil/core';
 
 import '@awesome.me/webawesome/dist/components/tab-group/tab-group.js';
 import '@awesome.me/webawesome/dist/components/tab-panel/tab-panel.js';
 import '@awesome.me/webawesome/dist/components/tab/tab.js';
 
+import { previewSelection, type PreviewSelection } from '../../lib/preview-events';
 import type OgmRecord from '../../lib/record';
 import { adoptWebAwesomeTheme, initialTheme, waScope } from '../../lib/init';
 import { resourcesFor } from '../../lib/resources/factory';
@@ -32,6 +33,37 @@ export class OgmPreviews {
   @Prop() requestTransform?: RequestTransform;
   @Prop() sidebarPadding: number;
   @State() private recordPreviewers: AnyPreviewer[] = [];
+  /** Active preview identity; null when there are no previews. */
+  @Event() previewChange: EventEmitter<PreviewSelection | null>;
+  @State() private activePreviewId?: string;
+  private lastSelection?: string;
+  private tabGroup?: HTMLElement;
+
+  private get activePreview() {
+    return this.tabs.find(preview => preview.previewId === this.activePreviewId) ?? this.tabs[0];
+  }
+
+  componentDidRender() {
+    const detail = this.activePreview ? previewSelection(this.activePreview) : null;
+    const serialized = JSON.stringify(detail);
+    if (serialized !== this.lastSelection) {
+      this.lastSelection = serialized;
+      this.previewChange.emit(detail);
+    }
+  }
+
+  @Listen('wa-tab-show')
+  protected onTabShown(event: CustomEvent<{ name: string }>) {
+    if (event.composedPath()[0] !== this.tabGroup) return;
+    if (this.tabs.some(preview => preview.previewId === event.detail.name)) this.activePreviewId = event.detail.name;
+  }
+
+  @Watch('previewers')
+  protected resetSelection() {
+    this.activePreviewId = undefined;
+    this.lastSelection = undefined;
+  }
+
   @Event() previewsLoading: EventEmitter<void>;
   @Event() previewsLoaded: EventEmitter<void>;
 
@@ -63,6 +95,7 @@ export class OgmPreviews {
   // there is nothing for a record to add, and the work would only be thrown away.
   private async buildPreviewers(record?: OgmRecord) {
     const build = ++this.pending;
+    this.resetSelection();
     if (!record || this.previewers) {
       this.recordPreviewers = [];
       return;
@@ -98,14 +131,14 @@ export class OgmPreviews {
 
     return (
       <Host class={waScope(this.theme)}>
-        <wa-tab-group class={waScope(this.theme)} key={tabs.map(previewer => previewer.previewId).join()}>
+        <wa-tab-group ref={(el: HTMLElement) => (this.tabGroup = el)} active={this.activePreview?.previewId} class={waScope(this.theme)} key={tabs.map(previewer => previewer.previewId).join()}>
           {tabs.map(previewer => (
             <wa-tab key={`tab-${previewer.previewId}`} panel={previewer.previewId}>
               {previewer.label()}
             </wa-tab>
           ))}
-          {tabs.map((previewer, idx) => (
-            <wa-tab-panel key={`panel-${previewer.previewId}`} name={previewer.previewId} active={idx === 0}>
+          {tabs.map(previewer => (
+            <wa-tab-panel key={`panel-${previewer.previewId}`} name={previewer.previewId} active={previewer.previewId === this.activePreview?.previewId}>
               <ogm-preview
                 theme={this.theme}
                 darkBasemap={this.darkBasemap}

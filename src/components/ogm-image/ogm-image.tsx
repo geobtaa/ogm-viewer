@@ -1,5 +1,6 @@
 import { Component, Element, h, Host, Watch, Prop, Event, EventEmitter, State } from '@stencil/core';
 import { Viewer } from 'openseadragon';
+import { observeImageSelection, type ImageSelection } from '../../lib/preview-events';
 
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
@@ -20,6 +21,10 @@ export class OgmImage {
   @Prop() previewer: ImagePreviewer;
   @Prop() theme: 'light' | 'dark' = initialTheme(this.el);
   @Prop() padding: number = 0;
+  /** The opened image source; null while changing pages or after a failed image load. */
+  @Event() imageChange: EventEmitter<ImageSelection>;
+  private removeImageSelection?: () => void;
+
   @Event() imageLoaded: EventEmitter<void>;
   @Event() imageLoading: EventEmitter<void>;
   @Event() previewError: EventEmitter<PreviewError>;
@@ -75,6 +80,13 @@ export class OgmImage {
     document.addEventListener('keydown', this.onFullscreenKeydown);
 
     // Clear loading state whether we succeeded or failed
+    this.removeImageSelection = observeImageSelection(
+      this.el,
+      this.viewer,
+      () => this.previewer,
+      detail => this.imageChange.emit(detail),
+    );
+
     this.viewer.addHandler('open', () => this.imageLoaded.emit());
 
     // Surface OpenSeaDragon decode errors here
@@ -89,6 +101,7 @@ export class OgmImage {
 
   // Destroy the viewer when we are removed from the DOM
   disconnectedCallback() {
+    this.removeImageSelection?.();
     document.removeEventListener('fullscreenchange', this.onFullscreenChange);
     document.removeEventListener('keydown', this.onFullscreenKeydown);
     this.exitFullscreenFallback();

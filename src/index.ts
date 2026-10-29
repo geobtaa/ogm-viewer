@@ -109,3 +109,5 @@ export type { LegendEntry, LegendImage } from './lib/legend';
 // facing it, so what's pointed at one is held to the half around its own middle.
 export { unionBounds, clampToHemisphere, WORLD } from './lib/geometry';
 export { fetchOrThrow, recordError, referenceError, HttpError, PreviewError } from './lib/errors';
+
+export type { PreviewSelection, ImageSelection, ImageSequenceEntry, ImageNavigation, ImageService } from './lib/preview-events';

@@ -55,6 +55,16 @@ const features = [
 export function fixtureResponse(url) {
   const base = url.origin;
   const json = body => ({ type: 'application/json', body: JSON.stringify(body) });
+  if (url.pathname === '/fixtures/wms') {
+    const request = url.searchParams.get('request')?.toLowerCase();
+    if (request === 'getcapabilities')
+      return {
+        type: 'application/xml',
+        body: '<WMS_Capabilities><Capability><Request><GetFeatureInfo><Format>application/json</Format></GetFeatureInfo></Request></Capability></WMS_Capabilities>',
+      };
+    if (request === 'getfeatureinfo') return json({ type: 'FeatureCollection', features: [] });
+    if (request === 'getmap') return { type: 'image/png', body: images.single };
+  }
   if (url.pathname === '/fixtures/style.json')
     return json({ version: 8, sources: {}, layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#eef2f6' } }] });
   if (url.pathname === '/fixtures/FeatureServer/0')

@@ -142,3 +142,52 @@ test('redundant tabs never flash while the first manifest image is loading', asy
   await opened(page);
   expect(await page.evaluate(() => (window as any).previewFrames.every((frame: any) => !frame.nav && !frame.single))).toBe(true);
 });
+
+// The published CUGIR record uses west,south,east,north, not ENVELOPE syntax.
+// Observe actual WMS requests rather than mocking MapLibre or reading its private state.
+test('CUGIR WMS fits resource bounds before and after delayed capabilities load', async ({ page }) => {
+  const tiles: number[][] = [];
+  let releaseCapabilities!: () => void;
+  const capabilities = new Promise<void>(resolve => (releaseCapabilities = resolve));
+  await page.route('**/fixtures/wms?*', async route => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get('request')?.toLowerCase() === 'getcapabilities') await capabilities;
+    if (url.searchParams.get('request')?.toLowerCase() === 'getmap') tiles.push(url.searchParams.get('bbox')!.split(',').map(Number));
+    const response = fixtureResponse(url)!;
+    await route.fulfill({ contentType: response.type, body: response.body });
+  });
+  const mercator = (lng: number, lat: number) => [(6378137 * lng * Math.PI) / 180, 6378137 * Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360))];
+  const [west, south] = mercator(-77.612, 42.576);
+  const [east, north] = mercator(-76.963, 43.04);
+  try {
+    await page.goto('/?fixture=cugir-007910');
+    // Tiles render while GetCapabilities is held: the constructor must already have framed NY.
+    await expect.poll(() => tiles.length).toBeGreaterThan(0);
+    for (const [left, bottom, right, top] of tiles) {
+      expect(right - left).toBeLessThan(100000);
+      expect(left).toBeGreaterThan(west - 200000);
+      expect(right).toBeLessThan(east + 200000);
+      expect(bottom).toBeGreaterThan(south - 200000);
+      expect(top).toBeLessThan(north + 200000);
+    }
+  } finally {
+    releaseCapabilities();
+  }
+  await expect(page.locator('#ready')).toHaveText('Map loaded');
+  // The requested tile coverage must include the entire record, not just its center.
+  expect(Math.min(...tiles.map(box => box[0]))).toBeLessThanOrEqual(west);
+  expect(Math.min(...tiles.map(box => box[1]))).toBeLessThanOrEqual(south);
+  expect(Math.max(...tiles.map(box => box[2]))).toBeGreaterThanOrEqual(east);
+  expect(Math.max(...tiles.map(box => box[3]))).toBeGreaterThanOrEqual(north);
+  // A center click asks WMS about a small geographic window at the camera center.
+  // This also catches a late metadata/style load resetting the view to the globe.
+  const inspection = page.waitForRequest(request => new URL(request.url()).searchParams.get('request')?.toLowerCase() === 'getfeatureinfo');
+  const canvas = page.locator('ogm-map canvas.maplibregl-canvas');
+  await canvas.click();
+  const bbox = new URL((await inspection).url()).searchParams.get('bbox')!.split(',').map(Number);
+  expect((bbox[0] + bbox[2]) / 2).toBeGreaterThan(west);
+  expect((bbox[0] + bbox[2]) / 2).toBeLessThan(east);
+  expect((bbox[1] + bbox[3]) / 2).toBeGreaterThan(south);
+  expect((bbox[1] + bbox[3]) / 2).toBeLessThan(north);
+  expect(bbox[2] - bbox[0]).toBeLessThan(20000);
+});

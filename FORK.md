@@ -19,6 +19,16 @@ upstream behavior for other consumers. No compiled package is modified at instal
 time. Event declarations are generated from the TypeScript source and exported
 from `ogm-viewer/lib` (using that dependency alias in consuming applications).
 
+## Bounds compatibility
+
+Issue #1 adds support for `dcat_bbox` supplied as `west,south,east,north`,
+using the existing bounds parser alongside Aardvark `ENVELOPE(...)` support.
+A local WMS browser fixture uses the Ontario County coordinates from
+`cugir-007910`. It checks actual tile extents while capabilities are delayed,
+then checks the geographic window requested by a center click after loading.
+This covers both the initial camera and later preview fitting without reading
+private MapLibre state.
+
 ## Build and validate
 
 Use the Node version in `.node-version`:

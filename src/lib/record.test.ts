@@ -144,6 +144,33 @@ describe('OgmRecord', () => {
   });
 
   describe('getBounds', () => {
+    it.each(['-77.612,42.576,-76.963,43.040', ' -77.612 42.576 -76.963 43.040 ', 'ENVELOPE(-77.612,-76.963,43.040,42.576)'])('reads Ontario County bounds from %s', bbox => {
+      const record = new OgmRecord({
+        id: 'cugir-007910',
+        dct_title_s: 'SSURGO soils, Ontario County NY',
+        gbl_resourceClass_sm: ['Datasets'],
+        dct_accessRights_s: 'Public',
+        gbl_mdVersion_s: 'Aardvark',
+        dcat_bbox: bbox,
+      });
+      expect(record.getBounds()?.toArray()).toEqual([
+        [-77.612, 42.576],
+        [-76.963, 43.04],
+      ]);
+    });
+
+    it.each(['invalid', '-77,42,-76', '-77,NaN,-76,43', '-77,42,-76,100'])('ignores unusable bounds %s', bbox => {
+      const record = new OgmRecord({
+        id: 'invalid-bounds',
+        dct_title_s: 'Invalid bounds',
+        gbl_resourceClass_sm: ['Datasets'],
+        dct_accessRights_s: 'Public',
+        gbl_mdVersion_s: 'Aardvark',
+        dcat_bbox: bbox,
+      });
+      expect(record.getBounds()).toBeUndefined();
+    });
+
     it('should be empty if there is no bbox', () => {
       const record = new OgmRecord({
         id: '1',

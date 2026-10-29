@@ -1,5 +1,5 @@
 import { References } from './references';
-import { bboxToBounds, boundsToGeoJSON, geomToGeoJSON } from './geometry';
+import { readBounds, boundsToGeoJSON, geomToGeoJSON } from './geometry';
 
 /**
  * Schema for GeoBlacklight. See https://opengeometadata.github.io/aardvark/aardvarkMetadata.html for more details.
@@ -229,10 +229,10 @@ export default class OgmRecord {
     return [];
   }
 
-  // Get the bounding box as LngLatBounds
+  // Read both Aardvark ENVELOPE and west,south,east,north bounds supplied by APIs.
   getBounds() {
     if (!this.bbox) return;
-    return bboxToBounds(this.bbox);
+    return readBounds(this.bbox);
   }
 
   // Get the geometry as a GeoJSON Polygon

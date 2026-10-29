@@ -32,6 +32,7 @@
       <option>unavailable</option>
       <option>mixed</option>
       <option>arcgis</option>
+      <option>cugir-007910</option>
       <option>location</option>
     </select></label
   >
@@ -90,11 +91,12 @@
       publish();
       document.querySelector('#ready').textContent = '';
       const references = {};
-      if (!['arcgis', 'location'].includes(scenario)) {
+      if (!['arcgis', 'location', 'cugir-007910'].includes(scenario)) {
         references['http://iiif.io/api/image'] = `${location.origin}/fixtures/iiif/single/info.json`;
         references['http://iiif.io/api/presentation#manifest'] = `${location.origin}/fixtures/manifest/${scenario === 'mixed' ? 'good' : scenario}`;
       }
       if (['arcgis', 'mixed'].includes(scenario)) references['urn:x-esri:serviceType:ArcGIS#FeatureLayer'] = `${location.origin}/fixtures/FeatureServer/0`;
+      if (scenario === 'cugir-007910') references['http://www.opengis.net/def/serviceType/ogc/wms'] = `${location.origin}/fixtures/wms`;
       await viewer.loadRecord(
         new OgmRecord({
           id: scenario,
@@ -103,6 +105,12 @@
           gbl_mdVersion_s: 'Aardvark',
           dct_accessRights_s: 'Public',
           locn_geometry: 'ENVELOPE(-2,2,2,-2)',
+          ...(scenario === 'cugir-007910' && {
+            dct_title_s: 'SSURGO soils, Ontario County NY',
+            dcat_bbox: '-77.612,42.576,-76.963,43.040',
+            locn_geometry: 'POLYGON((-77.612 43.040, -76.963 43.040, -76.963 42.576, -77.612 42.576, -77.612 43.040))',
+            gbl_wxsIdentifier_s: 'cugir007910',
+          }),
           dct_references_s: JSON.stringify(references),
         }),
       );

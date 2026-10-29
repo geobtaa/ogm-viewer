@@ -4,7 +4,8 @@ import '@awesome.me/webawesome/dist/components/tab-group/tab-group.js';
 import '@awesome.me/webawesome/dist/components/tab-panel/tab-panel.js';
 import '@awesome.me/webawesome/dist/components/tab/tab.js';
 
-import { previewSelection, type PreviewSelection } from '../../lib/preview-events';
+import { hiddenImage, isIiifImage, preferManifests, recoveryPreview } from '../../lib/preview-policy';
+import { previewSelection, type ImageSelection, type PreviewSelection } from '../../lib/preview-events';
 import type OgmRecord from '../../lib/record';
 import { adoptWebAwesomeTheme, initialTheme, waScope } from '../../lib/init';
 import { resourcesFor } from '../../lib/resources/factory';
@@ -25,6 +26,10 @@ export class OgmPreviews {
   @Prop() lightBasemap?: string;
   /** Omit metadata-only location previews derived from a record. Explicit previewers are preserved. */
   @Prop() omitLocation: boolean = false;
+  /** Prefer complete manifests and recover initial image failures without replacing a working book. */
+  @Prop() preferManifest: boolean = false;
+  /** Hide tab navigation when only one preview is visible. */
+  @Prop() hideSingleTab: boolean = false;
   @Prop() record?: OgmRecord;
   // Previews to show, for an application that builds its own rather than handing over a record - the
   // tab strip is worth having either way. Takes the place of `record`, which is then not read at all.
@@ -38,6 +43,8 @@ export class OgmPreviews {
   /** Active preview identity; null when there are no previews. */
   @Event() previewChange: EventEmitter<PreviewSelection | null>;
   @State() private activePreviewId?: string;
+  @State() private opened: string[] = [];
+  @State() private failed: string[] = [];
   private lastSelection?: string;
   private tabGroup?: HTMLElement;
 
@@ -58,12 +65,55 @@ export class OgmPreviews {
   protected onTabShown(event: CustomEvent<{ name: string }>) {
     if (event.composedPath()[0] !== this.tabGroup) return;
     if (this.tabs.some(preview => preview.previewId === event.detail.name)) this.activePreviewId = event.detail.name;
+    this.recover();
   }
 
   @Watch('previewers')
   protected resetSelection() {
     this.activePreviewId = undefined;
     this.lastSelection = undefined;
+    this.opened = [];
+    this.failed = [];
+  }
+
+  private matches(source?: PreviewSelection) {
+    return source && this.tabs.find(preview => preview.previewId === source.previewId && preview.resourceId === source.resourceId && preview.url === source.resourceUrl);
+  }
+
+  private recover() {
+    if (!this.preferManifest) return;
+    const id = recoveryPreview(this.tabs, this.activePreview?.previewId, this.opened, this.failed);
+    if (id) this.activePreviewId = id;
+  }
+
+  @Listen('imageChange')
+  protected onImageChange(event: CustomEvent<ImageSelection>) {
+    if (!this.preferManifest || !event.detail?.image) return;
+    const preview = this.matches(event.detail);
+    if (!preview || !isIiifImage(preview)) return;
+    if (!this.opened.includes(preview.previewId)) this.opened = [...this.opened, preview.previewId];
+    this.failed = this.failed.filter(id => id !== preview.previewId);
+    this.recover();
+  }
+
+  @Listen('previewError', { capture: true })
+  protected onPreviewError(event: Event) {
+    if (!this.preferManifest) return;
+    const image = event.composedPath().find(node => (node as HTMLElement).tagName === 'OGM-IMAGE') as HTMLOgmImageElement | undefined;
+    const source = image?.previewer;
+    const preview = source && this.matches(previewSelection(source));
+    if (!preview || !isIiifImage(preview) || this.opened.includes(preview.previewId)) return;
+    if (!this.failed.includes(preview.previewId)) this.failed = [...this.failed, preview.previewId];
+    this.recover();
+  }
+
+  private hidden(preview: AnyPreviewer) {
+    return this.preferManifest && hiddenImage(preview, this.tabs, this.activePreview?.previewId, this.failed);
+  }
+
+  private label(preview: AnyPreviewer) {
+    if (this.preferManifest && isIiifImage(preview)) return preview.kind === 'iiif-manifest' ? 'Images' : 'Single image';
+    return preview.label();
   }
 
   @Event() previewsLoading: EventEmitter<void>;
@@ -77,7 +127,9 @@ export class OgmPreviews {
   // Every preview to show, one per tab: the ones we were handed, or else the ones this record turned
   // out to offer.
   private get tabs(): AnyPreviewer[] {
-    return this.previewers ?? this.recordPreviewers.filter(preview => !this.omitLocation || preview.kind !== 'location');
+    if (this.previewers) return this.previewers;
+    const previews = this.recordPreviewers.filter(preview => !this.omitLocation || preview.kind !== 'location');
+    return this.preferManifest ? preferManifests(previews) : previews;
   }
 
   // @Watch only fires on changes, so the record we were rendered with is handled here. Returning
@@ -134,14 +186,22 @@ export class OgmPreviews {
     return (
       <Host class={waScope(this.theme)}>
         <wa-tab-group
+          data-single-preview={this.hideSingleTab && tabs.filter(preview => !this.hidden(preview)).length === 1 ? '' : undefined}
           ref={(el: HTMLElement) => (this.tabGroup = el)}
           active={this.activePreview?.previewId}
           class={waScope(this.theme)}
           key={tabs.map(previewer => previewer.previewId).join()}
         >
           {tabs.map(previewer => (
-            <wa-tab key={`tab-${previewer.previewId}`} panel={previewer.previewId}>
-              {previewer.label()}
+            <wa-tab
+              key={`tab-${previewer.previewId}`}
+              panel={previewer.previewId}
+              hidden={this.hidden(previewer)}
+              style={{ display: this.hidden(previewer) ? 'none' : '' }}
+              disabled={this.failed.includes(previewer.previewId) && previewer.previewId !== this.activePreview?.previewId}
+              title={this.failed.includes(previewer.previewId) ? 'Preview unavailable' : undefined}
+            >
+              {this.label(previewer)}
             </wa-tab>
           ))}
           {tabs.map(previewer => (

@@ -196,12 +196,22 @@ export namespace Components {
     }
     interface OgmPreviews {
         "darkBasemap"?: string;
+        /**
+          * Hide tab navigation when only one preview is visible.
+          * @default false
+         */
+        "hideSingleTab": boolean;
         "lightBasemap"?: string;
         /**
           * Omit metadata-only location previews derived from a record. Explicit previewers are preserved.
           * @default false
          */
         "omitLocation": boolean;
+        /**
+          * Prefer complete manifests and recover initial image failures without replacing a working book.
+          * @default false
+         */
+        "preferManifest": boolean;
         "previewers"?: AnyPreviewer[];
         "record"?: OgmRecord;
         "requestTransform"?: RequestTransform;
@@ -235,6 +245,11 @@ export namespace Components {
          */
         "hideMenubar": boolean;
         /**
+          * Hide the tab bar when only one preview is visible.
+          * @default false
+         */
+        "hideSingleTab": boolean;
+        /**
           * @default false
          */
         "hideTitle": boolean;
@@ -245,6 +260,11 @@ export namespace Components {
           * @default false
          */
         "omitLocation": boolean;
+        /**
+          * Prefer complete manifests, hide redundant scans, and recover initial image failures.
+          * @default false
+         */
+        "preferManifest": boolean;
         "recordUrl"?: string;
         "requestTransform"?: RequestTransform;
         /**
@@ -716,6 +736,11 @@ declare namespace LocalJSX {
     }
     interface OgmPreviews {
         "darkBasemap"?: string;
+        /**
+          * Hide tab navigation when only one preview is visible.
+          * @default false
+         */
+        "hideSingleTab"?: boolean;
         "lightBasemap"?: string;
         /**
           * Omit metadata-only location previews derived from a record. Explicit previewers are preserved.
@@ -728,6 +753,11 @@ declare namespace LocalJSX {
         "onPreviewChange"?: (event: OgmPreviewsCustomEvent<PreviewSelection | null>) => void;
         "onPreviewsLoaded"?: (event: OgmPreviewsCustomEvent<void>) => void;
         "onPreviewsLoading"?: (event: OgmPreviewsCustomEvent<void>) => void;
+        /**
+          * Prefer complete manifests and recover initial image failures without replacing a working book.
+          * @default false
+         */
+        "preferManifest"?: boolean;
         "previewers"?: AnyPreviewer[];
         "record"?: OgmRecord;
         "requestTransform"?: RequestTransform;
@@ -763,6 +793,11 @@ declare namespace LocalJSX {
          */
         "hideMenubar"?: boolean;
         /**
+          * Hide the tab bar when only one preview is visible.
+          * @default false
+         */
+        "hideSingleTab"?: boolean;
+        /**
           * @default false
          */
         "hideTitle"?: boolean;
@@ -772,6 +807,11 @@ declare namespace LocalJSX {
           * @default false
          */
         "omitLocation"?: boolean;
+        /**
+          * Prefer complete manifests, hide redundant scans, and recover initial image failures.
+          * @default false
+         */
+        "preferManifest"?: boolean;
         "recordUrl"?: string;
         "requestTransform"?: RequestTransform;
         /**
@@ -846,6 +886,8 @@ declare namespace LocalJSX {
         "darkBasemap": string;
         "lightBasemap": string;
         "omitLocation": boolean;
+        "preferManifest": boolean;
+        "hideSingleTab": boolean;
         "sidebarPadding": number;
     }
     interface OgmSidebarAttributes {
@@ -862,6 +904,8 @@ declare namespace LocalJSX {
         "lightBasemap": string;
         "hideMenubar": boolean;
         "omitLocation": boolean;
+        "preferManifest": boolean;
+        "hideSingleTab": boolean;
         "hideTitle": boolean;
     }
 

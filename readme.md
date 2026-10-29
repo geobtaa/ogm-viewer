@@ -409,3 +409,17 @@ and `ImageNavigation` are exported from `ogm-viewer/lib`.
 metadata-derived Location preview, preserving actual map layers and explicitly
 supplied previewers. Both options default to false. Set them before loading a
 record to avoid rendering unwanted controls in the first frame.
+
+### Optional manifest presentation
+
+Set `prefer-manifest` on `<ogm-viewer>` or `<ogm-previews>` to open the
+manifest's **Images** preview before a **Single image** reference. Redundant
+Single image tabs are hidden from the initial render while the manifest loads
+and after it opens. An initial failure reveals the fallback; the viewer switches
+only after that fallback has opened successfully. Later page errors leave the
+reader in the book, and a chosen map preview is preserved. State resets with
+the record. Explicit previewer order is preserved.
+
+Set `hide-single-tab` to omit navigation when only one preview is visible.
+Panels remain mounted when visibility changes, preserving their canvas state.
+Both options default to false; consumers opt in to these presentation choices.

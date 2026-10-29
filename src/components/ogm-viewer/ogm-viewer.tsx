@@ -22,6 +22,10 @@ export class OgmViewer {
   @Prop() hideMenubar: boolean = false;
   /** Omit the metadata-only location preview; content map layers are unaffected. */
   @Prop() omitLocation: boolean = false;
+  /** Prefer complete manifests, hide redundant scans, and recover initial image failures. */
+  @Prop() preferManifest: boolean = false;
+  /** Hide the tab bar when only one preview is visible. */
+  @Prop() hideSingleTab: boolean = false;
   @Prop() hideTitle: boolean = false;
   // Applied to the record fetch itself, and passed down to every resource built from it - see
   // Resource.requestTransform. A DOM property, like previewer on <ogm-preview>: set it before or
@@ -118,6 +122,8 @@ export class OgmViewer {
                 theme={this.theme}
                 darkBasemap={this.darkBasemap}
                 lightBasemap={this.lightBasemap}
+                preferManifest={this.preferManifest}
+                hideSingleTab={this.hideSingleTab}
                 omitLocation={this.omitLocation}
                 record={this.record}
                 requestTransform={this.requestTransform}

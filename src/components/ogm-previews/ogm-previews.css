@@ -43,3 +43,8 @@ ogm-map {
   display: block;
   height: 100%;
 }
+
+/* Applied by the initial render as well as subsequent availability changes. */
+wa-tab-group[data-single-preview]::part(nav) {
+  display: none;
+}

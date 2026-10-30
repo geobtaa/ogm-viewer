@@ -198,6 +198,17 @@ describe('TileJsonVectorPreviewer#previewLayers', () => {
     expect(map.layers.get('princeton-fk4544658v-tilejson-districts-lines').paint['line-opacity']).toEqual(style.opacity);
   });
 
+  it('preserves recipe fill opacity when the layer control reapplies opacity', async () => {
+    const map = new FakeMap();
+    const resource = serve(vectorDoc);
+    resource.previewRecipe = { kind: 'vector', bands: [1], fill_opacity: 0.25, stroke_width: 1.5 };
+    const previewer = new TileJsonVectorPreviewer(resource).attach(map as unknown as MapLibreMap, style);
+    await previewer.preview();
+    previewer.applyLayerState(new Map([['princeton-fk4544658v-tilejson-places', { visible: true, opacity: 0.5 }]]));
+    expect(map.layers.get('princeton-fk4544658v-tilejson-places-polygons').paint['fill-opacity'].at(-1)).toEqual(0.125);
+    expect(map.layers.get('princeton-fk4544658v-tilejson-places-polygon-outlines').paint['line-width'].at(-1)).toEqual(1.5);
+  });
+
   it('still offers a raster tileset exactly one row', async () => {
     const map = new FakeMap();
     const previewer = new TileJsonRasterPreviewer(serve(rasterDoc)).attach(map as unknown as MapLibreMap, style);

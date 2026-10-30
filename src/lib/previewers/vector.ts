@@ -172,7 +172,7 @@ export default abstract class VectorPreviewer extends MapPreviewer {
 
   protected applyOpacity(styleLayer: PreviewStyleLayer, opacity: number) {
     if (styleLayer.type === 'fill') {
-      this.map.setPaintProperty(styleLayer.id, 'fill-opacity', this.selectedOpacity(opacity));
+      this.map.setPaintProperty(styleLayer.id, 'fill-opacity', this.selectedOpacity(opacity * (this.resource.previewRecipe?.fill_opacity ?? 1)));
     } else if (styleLayer.type === 'circle') {
       this.map.setPaintProperty(styleLayer.id, 'circle-opacity', this.selectedOpacity(opacity));
       this.map.setPaintProperty(styleLayer.id, 'circle-stroke-opacity', opacity);
@@ -207,7 +207,7 @@ export default abstract class VectorPreviewer extends MapPreviewer {
       },
       paint: {
         'line-color': this.strokeColorExpression(),
-        'line-width': ['case', IS_SELECTED, 2, 1] as const,
+        'line-width': ['case', IS_SELECTED, 2, this.resource.previewRecipe?.stroke_width ?? 1] as const,
         'line-opacity': this.getDefaultOpacity(),
       },
       filter: ['==', ['geometry-type'], 'Polygon'] as const,

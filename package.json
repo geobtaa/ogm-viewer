@@ -1,6 +1,6 @@
 {
   "name": "@geobtaa/ogm-viewer",
-  "version": "1.7.0-btaa.1",
+  "version": "1.7.0-btaa.2",
   "description": "A web-based viewer for previewing OpenGeoMetadata records",
   "module": "./dist/components/ogm-viewer.js",
   "types": "./dist/components/ogm-viewer.d.ts",

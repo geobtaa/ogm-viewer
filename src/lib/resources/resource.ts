@@ -1,3 +1,4 @@
+import type { PreviewRecipe } from '../preview-recipe';
 import type { LngLatBoundsLike } from 'maplibre-gl';
 
 import { resolveRequest, type RequestTransform } from '../request';
@@ -25,6 +26,10 @@ export default abstract class Resource {
   abstract readonly kind: ResourceKind;
 
   url: string;
+
+  previewRecipe?: PreviewRecipe;
+  previewKey?: string;
+  previewName?: string;
 
   protected bounds: LngLatBoundsLike | undefined;
 

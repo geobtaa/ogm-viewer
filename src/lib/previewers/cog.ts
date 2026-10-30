@@ -4,6 +4,7 @@ import type { DecoderPool, GeoTIFF } from '@developmentseed/geotiff';
 import type { AddLayerObject, LngLatBoundsLike, MapLibreMap } from 'maplibre-gl';
 
 import MapPreviewer from './map';
+import { recipeTileData, renderRecipeTile, type RecipeTile } from '../recipe-raster';
 import { isScalarSampleFormat, releaseScalarTile, scalarGetTileData, scalarRange, scalarRenderTile, type ScalarRange, type ScalarTileData } from '../cog-pipeline';
 import type CogResource from '../resources/cog';
 import { DEFAULT_COLOR_RAMP } from '../colormap';
@@ -40,7 +41,7 @@ export default class CogPreviewer extends MapPreviewer {
 
   protected anyTileDrawn = false;
 
-  protected deckLayer: COGLayer | COGLayer<ScalarTileData> | undefined;
+  protected deckLayer: COGLayer | COGLayer<ScalarTileData> | COGLayer<RecipeTile> | undefined;
   private loading = false;
 
   attach(map: MapLibreMap, style: MapLibreStyle): this {
@@ -106,7 +107,7 @@ export default class CogPreviewer extends MapPreviewer {
   protected async createLayers(): Promise<AddLayerObject[]> {
     this.previewLayers.push({
       id: this.getLayerId(),
-      title: this.resource.label(),
+      title: this.label(),
       defaultOpacity: this.style.opacity,
       styleLayers: [{ id: this.getLayerId(), type: 'custom' }],
       ...(this.valueRange && { defaultColorRamp: DEFAULT_COLOR_RAMP, colorRampRange: this.valueRange }),
@@ -117,7 +118,7 @@ export default class CogPreviewer extends MapPreviewer {
   }
 
   protected getLayerId(): string {
-    return `${this.resource.id}-cog`;
+    return `${this.resource.id}-cog${this.resource.previewKey ? `-${this.resource.previewKey}` : ''}`;
   }
 
   // Read the scalar range before createLayers publishes the ramp defaults.
@@ -125,7 +126,7 @@ export default class CogPreviewer extends MapPreviewer {
     void this.readQuantity();
 
     this.geotiff = await this.loadGeoTIFF();
-    this.valueRange = isScalarSampleFormat(this.geotiff.cachedTags) ? await scalarRange(this.geotiff, this.decoderPool) : undefined;
+    this.valueRange = !this.resource.previewRecipe && isScalarSampleFormat(this.geotiff.cachedTags) ? await scalarRange(this.geotiff, this.decoderPool) : undefined;
     await super.preview();
     this.drawDeckLayer();
   }
@@ -179,7 +180,7 @@ export default class CogPreviewer extends MapPreviewer {
     this.drawDeckLayer();
   };
 
-  protected createDeckLayer(geotiff: GeoTIFF, state: LayerState): COGLayer | COGLayer<ScalarTileData> {
+  protected createDeckLayer(geotiff: GeoTIFF, state: LayerState): COGLayer | COGLayer<ScalarTileData> | COGLayer<RecipeTile> {
     const range = this.valueRange;
 
     const shared = {
@@ -202,6 +203,13 @@ export default class CogPreviewer extends MapPreviewer {
       beforeId: this.resolvedBeforeId,
     };
 
+    if (this.resource.previewRecipe)
+      return new COGLayer<RecipeTile>({
+        ...shared,
+        getTileData: recipeTileData(this.resource.previewRecipe),
+        renderTile: renderRecipeTile,
+        onTileUnload: (tile: UnloadedTile) => (tile.content as RecipeTile | null)?.texture.destroy(),
+      });
     if (!range) return new COGLayer({ ...shared });
 
     const ramp = state.colorRamp ?? DEFAULT_COLOR_RAMP;

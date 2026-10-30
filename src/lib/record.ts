@@ -1,3 +1,4 @@
+import type { PreparedPreviewLayer } from './preview-recipe';
 import { References } from './references';
 import { readBounds, boundsToGeoJSON, geomToGeoJSON } from './geometry';
 
@@ -94,6 +95,9 @@ export const OGM_FIELD_NAMES = {
 
 export default class OgmRecord {
   json: GeoBlacklightSchemaAardvark;
+
+  /** Prepared derivatives supplied by a host application, not harvested metadata. */
+  preparedPreviews?: PreparedPreviewLayer[];
 
   id: string;
   title: string;

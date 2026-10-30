@@ -398,3 +398,18 @@ It covers selection and navigation, repeated images, multiple images per canvas,
 initial fallback, later-page failures, record changes, first-frame tab visibility,
 default embedding behavior, and real MapLibre rendering and feature inspection.
 CI retains traces and screenshots for failed tests. No live catalog service is required.
+
+### Runtime prepared previews (BTAA fork)
+
+Hosts can supply `record.preparedPreviews` without modifying harvested record JSON.
+Each entry has a stable `id`, `name`, `url`, `format` (`cog` or `pmtiles`), optional
+geographic `bounds`, and optional `recipe`. Distinct entries remain distinct named
+previews. Existing native references keep their normal behavior.
+
+Raster recipes define `kind` (`rgb`, `scalar`, or `classified`), one-based `bands`,
+optional `nodata`, and either an explicit `value_range` or a class `palette`.
+Scalar recipes supply a 256-entry RGBA palette; the viewer uses it without estimating
+a different range. Unknown classified values and masked/NoData pixels are transparent.
+Vector recipes supply `color`, `fill_opacity`, `stroke_width`, and `point_radius`.
+The host is responsible for validation, provenance, access control, and identifying
+representative samples separately from collection coverage.

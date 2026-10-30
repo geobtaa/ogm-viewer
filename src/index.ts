@@ -73,3 +73,5 @@ export { unionBounds, clampToHemisphere, WORLD } from './lib/geometry';
 export { fetchOrThrow, recordError, referenceError, HttpError, PreviewError } from './lib/errors';
 
 export type { PreviewSelection, ImageSelection, ImageSequenceEntry, ImageNavigation, ImageService } from './lib/preview-events';
+
+export type { PreviewRecipe, PreparedPreviewLayer } from './lib/preview-recipe';

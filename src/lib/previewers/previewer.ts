@@ -30,11 +30,11 @@ export default abstract class Previewer {
 
   // Include resource kind because multiple previews of one record share its record ID.
   get previewId(): string {
-    return `${this.resource.id}-${this.kind}-${this.renderer}`;
+    return `${this.resource.id}-${this.kind}-${this.renderer}${this.resource.previewKey ? `-${this.resource.previewKey}` : ''}`;
   }
 
   label(): string {
-    return this.resource.label();
+    return this.resource.previewName ?? this.resource.label();
   }
 
   get url(): string {

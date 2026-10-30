@@ -48,7 +48,7 @@ export default abstract class VectorPreviewer extends MapPreviewer {
   }
 
   protected getDefaultOpacity(): number {
-    return this.style.opacity;
+    return this.resource.previewRecipe ? 1 : this.style.opacity;
   }
 
   protected getLabelOpacity(): number {
@@ -153,7 +153,7 @@ export default abstract class VectorPreviewer extends MapPreviewer {
       this.style.highlightColor,
       ['==', ['get', 'available'], false],
       this.style.invalidColor,
-      this.style.dataColor,
+      this.resource.previewRecipe?.color ?? this.style.dataColor,
     ];
   }
 
@@ -166,7 +166,7 @@ export default abstract class VectorPreviewer extends MapPreviewer {
       this.style.strokeHighlightColor,
       ['==', ['get', 'available'], false],
       this.style.strokeInvalidColor,
-      this.style.strokeColor,
+      this.resource.previewRecipe?.color ?? this.style.strokeColor,
     ];
   }
 
@@ -191,7 +191,7 @@ export default abstract class VectorPreviewer extends MapPreviewer {
       },
       paint: {
         'fill-color': this.dataColorExpression(),
-        'fill-opacity': this.selectedOpacity(this.getDefaultOpacity()),
+        'fill-opacity': this.selectedOpacity(this.getDefaultOpacity() * (this.resource.previewRecipe?.fill_opacity ?? 1)),
       },
       filter: ['==', ['geometry-type'], 'Polygon'] as const,
     };
@@ -224,7 +224,7 @@ export default abstract class VectorPreviewer extends MapPreviewer {
       },
       paint: {
         'line-color': this.dataColorExpression(),
-        'line-width': 4,
+        'line-width': this.resource.previewRecipe?.stroke_width ?? 4,
         'line-opacity': this.getDefaultOpacity(),
       },
       filter: ['==', ['geometry-type'], 'LineString'] as const,
@@ -243,7 +243,7 @@ export default abstract class VectorPreviewer extends MapPreviewer {
         'circle-color': this.dataColorExpression(),
         'circle-stroke-color': this.strokeColorExpression(),
         'circle-stroke-width': ['case', IS_SELECTED, 2, 1] as const,
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 2, 12, 4] as const,
+        'circle-radius': this.resource.previewRecipe?.point_radius ?? (['interpolate', ['linear'], ['zoom'], 4, 2, 12, 4] as const),
         'circle-opacity': this.selectedOpacity(this.getDefaultOpacity()),
         'circle-stroke-opacity': this.getDefaultOpacity(),
       },

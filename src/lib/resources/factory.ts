@@ -45,6 +45,19 @@ export function resourcesFor(record: OgmRecord, requestTransform?: RequestTransf
   if (references.wmtsUrl && wxsIdentifier) resources.push(new WmtsResource(id, references.wmtsUrl, { layerIds: [wxsIdentifier] }, bounds, requestTransform));
   if (references.wmsUrl && wxsIdentifier) resources.push(new WmsResource(id, references.wmsUrl, { layerIds: [wxsIdentifier] }, bounds, requestTransform));
 
+  for (const layer of record.preparedPreviews ?? []) {
+    const existing = resources.find(resource => resource.url === layer.url);
+    if (existing) {
+      existing.previewRecipe = layer.recipe;
+      continue;
+    }
+    const resource = layer.format === 'cog' ? new CogResource(id, layer.url, layer.bounds, requestTransform) : new PMTilesResource(id, layer.url, layer.bounds, requestTransform);
+    resource.previewRecipe = layer.recipe;
+    resource.previewKey = layer.id;
+    resource.previewName = layer.name;
+    resources.push(resource);
+  }
+
   if (resources.every(resource => MAY_NOT_DRAW_A_MAP.includes(resource.kind))) {
     const geometry = record.getGeometry();
     if (geometry) resources.push(new LocationResource(id, geometry as GeoJSON.Geometry));

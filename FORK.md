@@ -75,3 +75,17 @@ Once upstream provides the required contracts, change only the dependency and
 thin React adapter as necessary. Downloads should continue to consume the public
 selection payload, without reaching into OpenSeadragon or resolving manifests a
 second time. Keep the browser tests as upgrade checks after the fork is retired.
+
+## Custom GeoTIFF projection units
+
+The shared-preview package corrects a `@developmentseed/geotiff` 0.8.1 parsing
+issue for user-defined projections measured in feet. Projection offsets must use
+`ProjLinearUnitsGeoKey` (OGC GeoTIFF 1.1, table C.2), not metres. The adapter adjusts
+the parsed projection before deck.gl computes forward and inverse transforms;
+it does not resample pixels, rewrite the source, or substitute metadata bounds.
+EPSG-coded, metre-based, and embedded-WKT paths retain their existing behavior.
+Remove this compatibility adjustment once an upstream release handles these units.
+
+The small `custom-survey-foot.tif` regression fixture has synthetic pixel values
+and the CRS/outer bounds of the public Sheboygan 2004 county DEM. Four independent
+GDAL/PROJ corner coordinates test forward placement and inverse transforms.

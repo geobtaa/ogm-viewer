@@ -99,5 +99,35 @@ export async function openGeoTIFF(url: string, requestTransform?: RequestTransfo
   const source = new TransformedGeoTIFFSource(url, requestTransform);
   const headerSource = new SourceView(source, [new SourceChunk({ size: CHUNK_SIZE }), new SourceCache({ size: CACHE_SIZE })]);
 
-  return await GeoTIFF.open({ dataSource: source, headerSource, signal });
+  return normalizeGeoTIFFProjectionUnits(await GeoTIFF.open({ dataSource: source, headerSource, signal }));
+}
+
+/**
+ * geotiff 0.8.1 labels user-defined projection offsets as metres regardless of
+ * ProjLinearUnitsGeoKey. GeoTIFF 1.1 table C.2 defines these values in the
+ * projection's linear units, including US survey feet. Correct the parsed CRS
+ * before deck.gl builds its forward/inverse transforms; never move the pixels
+ * or substitute a catalog bounding box. EPSG and embedded WKT paths are untouched.
+ * https://docs.ogc.org/is/19-008r4/19-008r4.html
+ */
+export function normalizeGeoTIFFProjectionUnits(geotiff: GeoTIFF): GeoTIFF {
+  const keys = geotiff.gkd;
+  if (keys?.modelType !== 1 || keys.projectedCRS !== 32767 || ![9002, 9003].includes(keys.projLinearUnits ?? 0)) return geotiff;
+
+  const crs = geotiff.crs;
+  if (typeof crs !== 'object' || crs.type !== 'ProjectedCRS') return geotiff;
+  const unit = crs.coordinate_system.axis[0]?.unit;
+  if (!unit || unit === 'metre') throw new Error('GeoTIFF projection linear units could not be resolved');
+
+  const corrected = {
+    ...crs,
+    conversion: {
+      ...crs.conversion,
+      parameters: crs.conversion.parameters.map(parameter => (parameter.unit === 'metre' ? { ...parameter, unit } : parameter)),
+    },
+  };
+  // Shadow the public getter on this instance; retain GeoTIFF identity and all
+  // range-reading/overview behavior without touching the library's private cache.
+  Object.defineProperty(geotiff, 'crs', { value: corrected, configurable: true });
+  return geotiff;
 }

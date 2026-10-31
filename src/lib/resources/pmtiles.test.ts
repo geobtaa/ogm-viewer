@@ -12,6 +12,16 @@ const archiveOf = (resource: PMTilesResource) => (resource as any).archive;
 describe('PMTilesResource', () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it('honors a prepared source layer and rejects a missing one', async () => {
+    const resource = new PMTilesResource('id', URL);
+    vi.spyOn(archiveOf(resource), 'getMetadata').mockResolvedValue({ vector_layers: [{ id: 'parks' }, { id: 'lakes' }] });
+    expect(await resource.getVectorLayers()).toEqual(['parks', 'lakes']);
+    resource.previewSourceLayer = 'lakes';
+    expect(await resource.getVectorLayers()).toEqual(['lakes']);
+    resource.previewSourceLayer = 'roads';
+    await expect(resource.getVectorLayers()).rejects.toThrow('absent');
+  });
+
   it('has no custom headers or credentials without a transform', () => {
     const source = archiveOf(new PMTilesResource('id', URL)).source;
 

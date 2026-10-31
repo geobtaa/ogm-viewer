@@ -28,6 +28,7 @@ export default abstract class Resource {
   url: string;
 
   previewRecipe?: PreviewRecipe;
+  previewSourceLayer?: string;
   previewKey?: string;
   previewName?: string;
 

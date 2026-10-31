@@ -46,13 +46,17 @@ export function resourcesFor(record: OgmRecord, requestTransform?: RequestTransf
   if (references.wmsUrl && wxsIdentifier) resources.push(new WmsResource(id, references.wmsUrl, { layerIds: [wxsIdentifier] }, bounds, requestTransform));
 
   for (const layer of record.preparedPreviews ?? []) {
-    const existing = resources.find(resource => resource.url === layer.url);
+    const existing = resources.find(resource => resource.url === layer.url && (!resource.previewSourceLayer || resource.previewSourceLayer === layer.source_layer));
     if (existing) {
       existing.previewRecipe = layer.recipe;
+      existing.previewSourceLayer = layer.source_layer ?? undefined;
+      existing.previewKey = layer.id;
+      existing.previewName = layer.name;
       continue;
     }
     const resource = layer.format === 'cog' ? new CogResource(id, layer.url, layer.bounds, requestTransform) : new PMTilesResource(id, layer.url, layer.bounds, requestTransform);
     resource.previewRecipe = layer.recipe;
+    resource.previewSourceLayer = layer.source_layer ?? undefined;
     resource.previewKey = layer.id;
     resource.previewName = layer.name;
     resources.push(resource);

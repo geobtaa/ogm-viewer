@@ -20,6 +20,7 @@ export interface PreparedPreviewLayer {
   name: string;
   url: string;
   format: 'cog' | 'pmtiles';
+  source_layer?: string | null;
   bounds?: LngLatBoundsLike;
   recipe?: PreviewRecipe;
 }

@@ -9,6 +9,22 @@ const array = (data: number[], count = 1) =>
   ({ layout: 'pixel-interleaved', data: new Float32Array(data), count, width: data.length / count, height: 1, mask: null, nodata: null }) as RasterArray;
 
 describe('prepared raster recipes', () => {
+  it('keeps separate prepared layers from the same native PMTiles archive', () => {
+    const record = new OgmRecord({
+      id: 'test',
+      dct_title_s: 'Test',
+      gbl_resourceClass_sm: [],
+      dct_accessRights_s: 'Public',
+      gbl_mdVersion_s: 'Aardvark',
+      dct_references_s: JSON.stringify({ 'https://github.com/protomaps/PMTiles': 'https://example.org/multi.pmtiles' }),
+    });
+    record.preparedPreviews = ['parks', 'lakes'].map(name => ({ id: name, name, source_layer: name, url: 'https://example.org/multi.pmtiles', format: 'pmtiles' }));
+    const resources = resourcesFor(record);
+    expect(resources).toHaveLength(2);
+    expect(resources.map(resource => resource.previewSourceLayer)).toEqual(['parks', 'lakes']);
+    expect(resources.map(resource => resource.previewKey)).toEqual(['parks', 'lakes']);
+    expect(JSON.parse(record.json.dct_references_s!)).toEqual({ 'https://github.com/protomaps/PMTiles': 'https://example.org/multi.pmtiles' });
+  });
   it('preserves categorical colors and makes unknown classes transparent', () => {
     expect([...recipePixels(array([1, 2, 9]), { kind: 'classified', bands: [1], palette: { '1': [0, 100, 0, 255], '2': [10, 20, 30, 255] } })]).toEqual([
       0, 100, 0, 255, 10, 20, 30, 255, 0, 0, 0, 0,

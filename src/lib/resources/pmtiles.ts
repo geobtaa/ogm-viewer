@@ -127,7 +127,12 @@ export default class PMTilesResource extends Resource {
 
   async getVectorLayers() {
     const m = await this.getMetadata();
-    return m.vector_layers.map(l => l.id);
+    const names = m.vector_layers.map(l => l.id);
+    if (this.previewSourceLayer) {
+      if (!names.includes(this.previewSourceLayer)) throw new Error('Prepared PMTiles layer is absent from the source archive');
+      return [this.previewSourceLayer];
+    }
+    return names;
   }
 
   async getVectorEncoding() {

@@ -401,6 +401,10 @@ CI retains traces and screenshots for failed tests. No live catalog service is r
 
 ### Runtime prepared previews (BTAA fork)
 
+Prepared PMTiles layers can supply `source_layer` to select one named layer from
+an existing archive. Multiple prepared entries may share an archive URL; each
+retains its own identity and recipe. Missing selected layers report an error.
+
 Hosts can supply `record.preparedPreviews` without modifying harvested record JSON.
 Each entry has a stable `id`, `name`, `url`, `format` (`cog` or `pmtiles`), optional
 geographic `bounds`, and optional `recipe`. Distinct entries remain distinct named

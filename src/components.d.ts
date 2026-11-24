@@ -11,7 +11,7 @@ import { ResourceKind } from "./lib/resources/resource";
 import { RequestTransform } from "./lib/request";
 import { References } from "./lib/references";
 import { FieldDefinitions } from "./lib/field-definitions";
-import { ImageSelection, PreviewSelection } from "./lib/preview-events";
+import { ImageSelection, PreviewSelection, PreviewTab } from "./lib/preview-events";
 import { LayerControl } from "./lib/layers";
 import { ColorRampName } from "./lib/colormap";
 import { LegendEntry } from "./lib/legend";
@@ -22,7 +22,7 @@ export { ResourceKind } from "./lib/resources/resource";
 export { RequestTransform } from "./lib/request";
 export { References } from "./lib/references";
 export { FieldDefinitions } from "./lib/field-definitions";
-export { ImageSelection, PreviewSelection } from "./lib/preview-events";
+export { ImageSelection, PreviewSelection, PreviewTab } from "./lib/preview-events";
 export { LayerControl } from "./lib/layers";
 export { ColorRampName } from "./lib/colormap";
 export { LegendEntry } from "./lib/legend";
@@ -193,6 +193,11 @@ export namespace Components {
         "beforeId"?: string;
         "darkBasemap"?: string;
         /**
+          * Let the embedding application render the visible preview tabs.
+          * @default false
+         */
+        "externalPreviewTabs": boolean;
+        /**
           * Hide tab navigation when only one preview is visible.
           * @default false
          */
@@ -211,6 +216,7 @@ export namespace Components {
         "previewers"?: AnyPreviewer[];
         "record"?: OgmRecord;
         "requestTransform"?: RequestTransform;
+        "selectPreviewTab": (id: string) => Promise<void>;
         "sidebarPadding": number;
         /**
           * @default initialTheme(this.el)
@@ -236,6 +242,11 @@ export namespace Components {
     interface OgmViewer {
         "beforeId"?: string;
         "darkBasemap"?: string;
+        /**
+          * Delegate preview navigation to the embedder using previewTabsChange and selectPreviewTab.
+          * @default false
+         */
+        "externalPreviewTabs": boolean;
         /**
           * Omit the internal title and menu when an embedding application supplies them.
           * @default false
@@ -267,6 +278,7 @@ export namespace Components {
           * Set before recordUrl; changing this alone does not refetch the current record.
          */
         "requestTransform"?: RequestTransform;
+        "selectPreviewTab": (id: string) => Promise<void>;
         /**
           * @default initialTheme(this.el)
          */
@@ -470,6 +482,7 @@ declare global {
         new (): HTMLOgmPreviewElement;
     };
     interface HTMLOgmPreviewsElementEventMap {
+        "previewTabsChange": PreviewTab[];
         "previewChange": PreviewSelection | null;
         "previewsLoading": void;
         "previewsLoaded": void;
@@ -725,6 +738,11 @@ declare namespace LocalJSX {
         "beforeId"?: string;
         "darkBasemap"?: string;
         /**
+          * Let the embedding application render the visible preview tabs.
+          * @default false
+         */
+        "externalPreviewTabs"?: boolean;
+        /**
           * Hide tab navigation when only one preview is visible.
           * @default false
          */
@@ -739,6 +757,7 @@ declare namespace LocalJSX {
           * Active preview identity; null when there are no previews.
          */
         "onPreviewChange"?: (event: OgmPreviewsCustomEvent<PreviewSelection | null>) => void;
+        "onPreviewTabsChange"?: (event: OgmPreviewsCustomEvent<PreviewTab[]>) => void;
         "onPreviewsLoaded"?: (event: OgmPreviewsCustomEvent<void>) => void;
         "onPreviewsLoading"?: (event: OgmPreviewsCustomEvent<void>) => void;
         /**
@@ -776,6 +795,11 @@ declare namespace LocalJSX {
     interface OgmViewer {
         "beforeId"?: string;
         "darkBasemap"?: string;
+        /**
+          * Delegate preview navigation to the embedder using previewTabsChange and selectPreviewTab.
+          * @default false
+         */
+        "externalPreviewTabs"?: boolean;
         /**
           * Omit the internal title and menu when an embedding application supplies them.
           * @default false
@@ -880,6 +904,7 @@ declare namespace LocalJSX {
         "omitLocation": boolean;
         "preferManifest": boolean;
         "hideSingleTab": boolean;
+        "externalPreviewTabs": boolean;
         "beforeId": string;
         "sidebarPadding": number;
     }
@@ -899,6 +924,7 @@ declare namespace LocalJSX {
         "omitLocation": boolean;
         "preferManifest": boolean;
         "hideSingleTab": boolean;
+        "externalPreviewTabs": boolean;
         "beforeId": string;
         "hideTitle": boolean;
     }

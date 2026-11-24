@@ -6,6 +6,14 @@ export interface PreviewSelection {
   renderer: 'image' | 'map';
 }
 
+/** Visible preview choices for an embedding application's tablist. */
+export interface PreviewTab {
+  id: string;
+  label: string;
+  active: boolean;
+  disabled: boolean;
+}
+
 export interface ImageSequenceEntry {
   url: string;
   index: number;

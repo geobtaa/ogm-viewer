@@ -114,6 +114,30 @@ describe('ogm-previews', () => {
     expect(previewShadow.querySelector('ogm-map')).toBeNull();
   });
 
+  it('reports visible tabs and validates selections from an external header', async () => {
+    const previewers = buildPreviewers();
+    const el = (await mountPreviews(undefined, previewers)) as HTMLOgmPreviewsElement;
+    const changed = vi.fn();
+    el.addEventListener('previewTabsChange', changed);
+    el.externalPreviewTabs = true;
+    await flush();
+    const choices = () => changed.mock.lastCall?.[0].detail;
+    expect(choices()).toEqual(
+      previewers.map((preview, index) => ({
+        id: preview.previewId,
+        label: preview.label(),
+        active: index === 0,
+        disabled: false,
+      })),
+    );
+    await el.selectPreviewTab(previewers[1].previewId);
+    await flush();
+    expect(choices()[1].active).toBe(true);
+    await el.selectPreviewTab('stale-preview');
+    await flush();
+    expect(choices()[1].active).toBe(true);
+  });
+
   it('gives every preview its own tab, and every tab its own panel', async () => {
     const shadowRoot = await renderPreviews(
       buildRecordWith({

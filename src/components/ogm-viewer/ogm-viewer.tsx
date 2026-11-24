@@ -24,6 +24,15 @@ export class OgmViewer {
   @Prop() preferManifest: boolean = false;
   /** Hide the tab bar when only one preview is visible. */
   @Prop() hideSingleTab: boolean = false;
+  /** Delegate preview navigation to the embedder using previewTabsChange and selectPreviewTab. */
+  @Prop() externalPreviewTabs: boolean = false;
+  private previews?: HTMLOgmPreviewsElement;
+
+  @Method()
+  async selectPreviewTab(id: string): Promise<void> {
+    await this.previews?.selectPreviewTab(id);
+  }
+
   @Prop() beforeId?: string;
   @Prop() hideTitle: boolean = false;
   /** Set before recordUrl; changing this alone does not refetch the current record. */
@@ -110,6 +119,8 @@ export class OgmViewer {
                 darkBasemap={this.darkBasemap}
                 lightBasemap={this.lightBasemap}
                 preferManifest={this.preferManifest}
+                ref={el => (this.previews = el)}
+                externalPreviewTabs={this.externalPreviewTabs}
                 hideSingleTab={this.hideSingleTab}
                 omitLocation={this.omitLocation}
                 beforeId={this.beforeId}

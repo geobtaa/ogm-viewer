@@ -24,6 +24,15 @@ upstream behavior for other consumers. No compiled package is modified at instal
 time. Event declarations are generated from the TypeScript source and exported
 from `ogm-viewer/lib` (using that dependency alias in consuming applications).
 
+## Embedded preview tabs
+
+An embedder can set `external-preview-tabs` on `ogm-viewer` to place navigation
+in its own header. Listen for the bubbling `previewTabsChange` event to receive
+the ordered visible tabs with their IDs, labels, active state and availability.
+Call `selectPreviewTab(id)` to activate an available preview. The viewer
+continues to handle manifest preference, initial failure recovery and image
+selection. The default viewer retains its built-in navigation.
+
 ## Bounds compatibility
 
 Issue #1 adds support for `dcat_bbox` supplied as `west,south,east,north`,

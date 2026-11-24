@@ -1,11 +1,11 @@
-import { Component, Element, Event, EventEmitter, Host, Listen, Prop, State, Watch, h } from '@stencil/core';
+import { Component, Element, Event, EventEmitter, Host, Listen, Method, Prop, State, Watch, h } from '@stencil/core';
 
 import '@awesome.me/webawesome/dist/components/tab-group/tab-group.js';
 import '@awesome.me/webawesome/dist/components/tab-panel/tab-panel.js';
 import '@awesome.me/webawesome/dist/components/tab/tab.js';
 
 import { hiddenImage, isIiifImage, preferManifests, recoveryPreview } from '../../lib/preview-policy';
-import { previewSelection, type ImageSelection, type PreviewSelection } from '../../lib/preview-events';
+import { previewSelection, type ImageSelection, type PreviewTab, type PreviewSelection } from '../../lib/preview-events';
 import type OgmRecord from '../../lib/record';
 import { adoptWebAwesomeTheme, initialTheme, waScope } from '../../lib/init';
 import { resourcesFor } from '../../lib/resources/factory';
@@ -29,6 +29,17 @@ export class OgmPreviews {
   @Prop() preferManifest: boolean = false;
   /** Hide tab navigation when only one preview is visible. */
   @Prop() hideSingleTab: boolean = false;
+  /** Let the embedding application render the visible preview tabs. */
+  @Prop() externalPreviewTabs: boolean = false;
+  @Event() previewTabsChange: EventEmitter<PreviewTab[]>;
+  private lastTabs?: string;
+
+  @Method()
+  async selectPreviewTab(id: string): Promise<void> {
+    const preview = this.tabs.find(tab => tab.previewId === id);
+    if (preview && !this.hidden(preview) && !this.failed.includes(id)) this.activePreviewId = id;
+  }
+
   @Prop() record?: OgmRecord;
   @Prop() previewers?: AnyPreviewer[];
   @Prop() requestTransform?: RequestTransform;
@@ -50,6 +61,23 @@ export class OgmPreviews {
 
   componentDidRender() {
     const detail = this.activePreview ? previewSelection(this.activePreview) : null;
+    if (this.externalPreviewTabs) {
+      const tabs = this.tabs
+        .filter(preview => !this.hidden(preview))
+        .map(preview => ({
+          id: preview.previewId,
+          label: this.label(preview),
+          active: preview.previewId === detail?.previewId,
+          disabled: this.failed.includes(preview.previewId) && preview.previewId !== detail?.previewId,
+        }));
+      const signature = JSON.stringify(tabs);
+      if (signature !== this.lastTabs) {
+        this.lastTabs = signature;
+        this.previewTabsChange.emit(tabs);
+      }
+    } else {
+      this.lastTabs = undefined;
+    }
     const serialized = JSON.stringify(detail);
     if (serialized !== this.lastSelection) {
       this.lastSelection = serialized;
@@ -68,6 +96,7 @@ export class OgmPreviews {
   protected resetSelection() {
     this.activePreviewId = undefined;
     this.lastSelection = undefined;
+    this.lastTabs = undefined;
     this.opened = [];
     this.failed = [];
   }
@@ -171,6 +200,7 @@ export class OgmPreviews {
     return (
       <Host class={waScope(this.theme)}>
         <wa-tab-group
+          data-external-tabs={this.externalPreviewTabs ? '' : undefined}
           data-single-preview={this.hideSingleTab && tabs.filter(preview => !this.hidden(preview)).length === 1 ? '' : undefined}
           ref={(el: HTMLElement) => (this.tabGroup = el)}
           active={this.activePreview?.previewId}

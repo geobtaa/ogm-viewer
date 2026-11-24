@@ -41,6 +41,7 @@ ogm-map {
 }
 
 /* Applied by the initial render as well as subsequent availability changes. */
+wa-tab-group[data-external-tabs]::part(nav),
 wa-tab-group[data-single-preview]::part(nav) {
   display: none;
 }

@@ -65,6 +65,16 @@ ogm-viewer {
 }
 ```
 
+### View bounds
+
+By default, map previews will show the bounds in the provided record's bounding box field, or the bounds of the data itself if one is not set. To point the viewer somewhere else, you can set the `view-bounds` attribute:
+
+```html
+<ogm-viewer record-url="https://example.com/record.json" view-bounds="ENVELOPE(-124.41,-114.13,42.01,32.53)"></ogm-viewer>
+```
+
+It will accept an `ENVELOPE` string, or a list of numbers corresponding to the SW and NE coordinates of the box (e.g. `[-73.9876, 40.7661, -73.9397, 40.8002]`).
+
 ### Dark mode support
 
 The viewer supports dark mode. If your system preference is set to prefer dark mode, the viewer will automatically apply dark styles.
@@ -176,10 +186,10 @@ A scanned map with a [IIIF Georeference Annotation](https://iiif.io/api/extensio
 
 The viewer looks for the annotation in this order:
 
-1. Inside the manifest, following the annotation pages a canvas links until it finds one.
+1. Inside the manifest, following the annotation pages the manifest and its canvases link.
 2. A `dct_references_s` key of `https://iiif.io/api/extension/georef/1/context.json` pointing at a standalone annotation.
 
-When a record has both, the copy in the manifest wins. Only the first canvas is inspected, so a paged object with an annotation per page is left alone as of now.
+When a record has both, the copy in the manifest wins. Every canvas is inspected, and the maps found on all of them are drawn together in one layer, so an atlas or map series with an annotation per sheet shows every sheet.
 
 The map tab doesn't support the globe view or pan/tilt. These are constraints based on Allmaps' rendering engine, which is used to warp the image. There's also no way to hook into Allmaps' tile requests, so if the annotation points at a restricted image, it won't be able to fetch it. The viewer will still show the image tab, but the map tab will be blank.
 
@@ -230,16 +240,12 @@ document.querySelector('ogm-overview').addEventListener('boundsChange', event =>
 });
 ```
 
-If a search is executed externally, you can set the `search-bounds` attribute to reflect it on the map. It's drawn as a box and framed by the camera. It will accept an `ENVELOPE` string, or anything else MapLibre reads as bounds.
+Like the main viewer, the overview component supports the `view-bounds` attribute to point it to a specific view, without any padding.
+
+It also supports the `search-bounds` attribute: this will draw the provided bounds on the map as a rectangle and frame it using padding:
 
 ```html
 <ogm-overview search-bounds="ENVELOPE(-124.41,-114.13,42.01,32.53)"></ogm-overview>
-```
-
-If you want to move the camera to a specific area, you can set the `view-bounds` attribute the same way. This won't draw a box and will try to fit the exact bounds provided, without applying any padding.
-
-```html
-<ogm-overview view-bounds="ENVELOPE(-124.41,-114.13,42.01,32.53)"></ogm-overview>
 ```
 
 ### Advanced usage

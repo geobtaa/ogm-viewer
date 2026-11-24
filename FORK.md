@@ -1,14 +1,15 @@
 # BTAA integration fork
 
-This is a stabilization fork based on upstream **v1.7.0**, commit
-`b85061b8c5aa38a3b19b1a5e28acc7eec5d765dd`. No upstream PRs have been opened for
+This is a stabilization fork based on upstream **v1.8.0**, commit
+`7bf2e2bb15f70ae126c5b100212417fd9b76c195`. No upstream PRs have been opened for
 these changes. The integration branch is `feature/viewer-integration`; `main`
 is the unmodified upstream history.
 
-Upstream v1.7.0 is merged into the integration branch without rewriting the
-existing focused commits. It adds COG index-map mosaics, FGDC-derived legends,
-layer ordering controls, and improved handling of blocked requests. Our image
-selection, embedding, and bounds compatibility changes remain in place.
+Upstream v1.8.0 adds popup auto-pan, explicit view bounds, and resolution of IIIF
+canvas annotation targets to their images. The integration branch merges upstream main through commit
+`21cb53080e59bf554726512603e2f3a61d6eb05c`, including the Development Seed 0.10.0 raster renderer for band-separate COGs,
+the range reader, and support for linked georeference
+annotations in the **Georeferenced content** preview.
 
 The changes are intentionally separate commits:
 

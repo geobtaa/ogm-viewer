@@ -11,10 +11,14 @@ import { ResourceKind } from "./lib/resources/resource";
 import { RequestTransform } from "./lib/request";
 import { References } from "./lib/references";
 import { FieldDefinitions } from "./lib/field-definitions";
+import ImagePreviewer from "./lib/previewers/image";
 import { ImageSelection, PreviewSelection, PreviewTab } from "./lib/preview-events";
 import { LayerControl } from "./lib/layers";
 import { ColorRampName } from "./lib/colormap";
 import { LegendEntry } from "./lib/legend";
+import OgmRecord from "./lib/record";
+import LocationPreviewer from "./lib/previewers/location";
+import MapPreviewer from "./lib/previewers/map";
 import { AnyPreviewer } from "./lib/previewers/factory";
 export { PreviewError } from "./lib/errors";
 export { EaseToOptions, LngLatBoundsLike, MapGeoJSONFeature, MapLibreMap } from "maplibre-gl";
@@ -22,10 +26,14 @@ export { ResourceKind } from "./lib/resources/resource";
 export { RequestTransform } from "./lib/request";
 export { References } from "./lib/references";
 export { FieldDefinitions } from "./lib/field-definitions";
+export { default as ImagePreviewer } from "./lib/previewers/image";
 export { ImageSelection, PreviewSelection, PreviewTab } from "./lib/preview-events";
 export { LayerControl } from "./lib/layers";
 export { ColorRampName } from "./lib/colormap";
 export { LegendEntry } from "./lib/legend";
+export { default as OgmRecord } from "./lib/record";
+export { default as LocationPreviewer } from "./lib/previewers/location";
+export { default as MapPreviewer } from "./lib/previewers/map";
 export { AnyPreviewer } from "./lib/previewers/factory";
 export namespace Components {
     interface OgmAlerts {
@@ -100,7 +108,6 @@ export namespace Components {
     }
     interface OgmMap {
         /**
-          * Require a modifier for scrolling and two fingers for touch dragging.
           * @default true
          */
         "cooperativeGestures": boolean;
@@ -117,6 +124,7 @@ export namespace Components {
           * @default initialTheme(this.el)
          */
         "theme": 'light' | 'dark';
+        "viewBounds"?: LngLatBoundsLike | string;
     }
     interface OgmMenubar {
         /**
@@ -185,11 +193,9 @@ export namespace Components {
           * @default initialTheme(this.el)
          */
         "theme": 'light' | 'dark';
+        "viewBounds"?: LngLatBoundsLike | string;
     }
     interface OgmPreviews {
-        /**
-          * Undefined uses the default label layer; an empty string places previews above the basemap.
-         */
         "beforeId"?: string;
         "darkBasemap"?: string;
         /**
@@ -222,6 +228,7 @@ export namespace Components {
           * @default initialTheme(this.el)
          */
         "theme": 'light' | 'dark';
+        "viewBounds"?: LngLatBoundsLike | string;
     }
     interface OgmSidebar {
         /**
@@ -274,15 +281,13 @@ export namespace Components {
          */
         "preferManifest": boolean;
         "recordUrl"?: string;
-        /**
-          * Set before recordUrl; changing this alone does not refetch the current record.
-         */
         "requestTransform"?: RequestTransform;
         "selectPreviewTab": (id: string) => Promise<void>;
         /**
           * @default initialTheme(this.el)
          */
         "theme": 'light' | 'dark';
+        "viewBounds"?: LngLatBoundsLike | string;
     }
 }
 export interface OgmAttributesCustomEvent<T> extends CustomEvent<T> {
@@ -637,7 +642,6 @@ declare namespace LocalJSX {
     }
     interface OgmMap {
         /**
-          * Require a modifier for scrolling and two fingers for touch dragging.
           * @default true
          */
         "cooperativeGestures"?: boolean;
@@ -656,6 +660,7 @@ declare namespace LocalJSX {
           * @default initialTheme(this.el)
          */
         "theme"?: 'light' | 'dark';
+        "viewBounds"?: LngLatBoundsLike | string;
     }
     interface OgmMenubar {
         /**
@@ -730,11 +735,9 @@ declare namespace LocalJSX {
           * @default initialTheme(this.el)
          */
         "theme"?: 'light' | 'dark';
+        "viewBounds"?: LngLatBoundsLike | string;
     }
     interface OgmPreviews {
-        /**
-          * Undefined uses the default label layer; an empty string places previews above the basemap.
-         */
         "beforeId"?: string;
         "darkBasemap"?: string;
         /**
@@ -773,6 +776,7 @@ declare namespace LocalJSX {
           * @default initialTheme(this.el)
          */
         "theme"?: 'light' | 'dark';
+        "viewBounds"?: LngLatBoundsLike | string;
     }
     interface OgmSidebar {
         /**
@@ -826,14 +830,12 @@ declare namespace LocalJSX {
          */
         "preferManifest"?: boolean;
         "recordUrl"?: string;
-        /**
-          * Set before recordUrl; changing this alone does not refetch the current record.
-         */
         "requestTransform"?: RequestTransform;
         /**
           * @default initialTheme(this.el)
          */
         "theme"?: 'light' | 'dark';
+        "viewBounds"?: LngLatBoundsLike | string;
     }
 
     interface OgmAlertsAttributes {
@@ -869,6 +871,7 @@ declare namespace LocalJSX {
         "darkBasemap": string;
         "lightBasemap": string;
         "padding": number;
+        "viewBounds": LngLatBoundsLike | string;
         "cooperativeGestures": boolean;
     }
     interface OgmMenubarAttributes {
@@ -896,6 +899,7 @@ declare namespace LocalJSX {
         "lightBasemap": string;
         "sidebarPadding": number;
         "cooperativeGestures": boolean;
+        "viewBounds": LngLatBoundsLike | string;
     }
     interface OgmPreviewsAttributes {
         "theme": 'light' | 'dark';
@@ -907,6 +911,7 @@ declare namespace LocalJSX {
         "externalPreviewTabs": boolean;
         "beforeId": string;
         "sidebarPadding": number;
+        "viewBounds": LngLatBoundsLike | string;
     }
     interface OgmSidebarAttributes {
         "theme": 'light' | 'dark';
@@ -927,6 +932,7 @@ declare namespace LocalJSX {
         "externalPreviewTabs": boolean;
         "beforeId": string;
         "hideTitle": boolean;
+        "viewBounds": LngLatBoundsLike | string;
     }
 
     interface IntrinsicElements {

@@ -186,8 +186,11 @@ export class OgmMap {
         visualizePitch: true,
       }),
     );
-    this.layersControl = new LayersControl(this.toggleLayersPanel.bind(this));
-    this.map.addControl(this.layersControl);
+    this.map.addControl(
+      new FullscreenControl({
+        container: this.getContainer(),
+      }),
+    );
     this.basemapControl = new BasemapControl(
       this.mapTheme.getBaseMapStyle(),
       (style, url) => {
@@ -213,11 +216,8 @@ export class OgmMap {
       },
     );
     this.map.addControl(this.basemapControl);
-    this.map.addControl(
-      new FullscreenControl({
-        container: this.getContainer(),
-      }),
-    );
+    this.layersControl = new LayersControl(this.toggleLayersPanel.bind(this));
+    this.map.addControl(this.layersControl);
     this.map.addControl(this.globeControl);
   }
 

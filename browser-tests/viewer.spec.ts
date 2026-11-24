@@ -83,6 +83,10 @@ test('location-only preview is omitted, while default chrome remains opt-in', as
 test('ArcGIS draws with a real MapLibre worker and native feature inspection', async ({ page }) => {
   await page.goto('/?fixture=arcgis');
   await expect(page.locator('#ready')).toHaveText('Map loaded');
+  const controls = page.locator('ogm-map .maplibregl-ctrl-top-right').getByRole('button');
+  const order = ['Zoom in', 'Zoom out', /reset north/i, 'Enter fullscreen', 'Change basemap', 'Show layers', /globe/i];
+  await expect(controls).toHaveCount(order.length);
+  for (const [index, name] of order.entries()) await expect(controls.nth(index)).toHaveAccessibleName(name);
   const canvas = page.locator('ogm-map canvas.maplibregl-canvas');
   await expect(canvas).toBeVisible();
   await canvas.click({ position: { x: 400, y: 300 } });

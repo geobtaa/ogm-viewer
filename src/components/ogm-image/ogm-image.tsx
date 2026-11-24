@@ -1,5 +1,6 @@
 import { Component, Element, h, Host, Watch, Prop, Event, EventEmitter, State } from '@stencil/core';
-import { Viewer } from 'openseadragon';
+import { IIIFTileSource, Viewer } from 'openseadragon';
+import { iiifServiceId } from '../../lib/iiif-service-id';
 import { observeImageSelection, type ImageSelection } from '../../lib/preview-events';
 
 import '@awesome.me/webawesome/dist/components/button/button.js';
@@ -10,6 +11,17 @@ import { referenceError, type PreviewError } from '../../lib/errors';
 import { adoptWebAwesomeTheme, initialTheme, waScope } from '../../lib/init';
 import type ImagePreviewer from '../../lib/previewers/image';
 import Theme from '../../lib/themes/theme';
+
+// OpenSeadragon configures each source here before constructing tiles for the
+// main image and filmstrip. The resulting source also supplies download URLs.
+const configureIIIF = IIIFTileSource.prototype.configure;
+IIIFTileSource.prototype.configure = function (data, url, postData) {
+  const options = configureIIIF.call(this, data, url, postData);
+  for (const key of ['@id', 'id']) {
+    if (typeof options[key] === 'string') options[key] = iiifServiceId(options[key], url);
+  }
+  return options;
+};
 
 @Component({
   tag: 'ogm-image',

@@ -20,6 +20,7 @@ import '@awesome.me/webawesome/dist/components/callout/callout.js';
 import { closestAcrossShadows, findElement, getElement } from '../../lib/elements';
 import { referenceError, TimeoutError, type PreviewError, isWebGLError, WebGLUnavailableError } from '../../lib/errors';
 import GlobeControl from '../../lib/globe-control';
+import { BasemapControl } from '../../lib/basemaps';
 import { adoptWebAwesomeTheme, initialTheme, waScope } from '../../lib/init';
 import { dedupeFeatures, identified } from '../../lib/features';
 import { boundsOverlap, boundsToBbox, mercatorBbox, readBounds, type PixelWindow } from '../../lib/geometry';
@@ -87,6 +88,8 @@ export class OgmMap {
   protected layersControl: LayersControl;
   private layerState = new Map<string, LayerState>();
 
+  private basemapControl?: BasemapControl;
+  private basemapRevision = 0;
   protected globeControl = new GlobeControl();
 
   private mapStyleLoaded: boolean = false;
@@ -185,6 +188,31 @@ export class OgmMap {
     );
     this.layersControl = new LayersControl(this.toggleLayersPanel.bind(this));
     this.map.addControl(this.layersControl);
+    this.basemapControl = new BasemapControl(
+      this.mapTheme.getBaseMapStyle(),
+      (style, url) => {
+        if (!this.mapStyleLoaded) throw new Error('Map style is loading');
+        this.basemapNotice = undefined;
+        this.failedBasemap = undefined;
+        this.basemapFellBack = false;
+        this.mapStyleLoaded = false;
+        if (this.theme === 'dark') this.mapTheme.darkBasemap = url;
+        else this.mapTheme.lightBasemap = url;
+        const revision = ++this.basemapRevision;
+        const projection = this.map.getProjection();
+        this.map.once('style.load', () => {
+          if (this.basemapRevision !== revision || !this.el.isConnected) return;
+          this.map.setProjection(projection);
+          void this.loadPreview(true);
+        });
+        // Rebuild custom WebGL and ordinary data layers using the same previewer.
+        this.map.setStyle(style, { diff: false });
+      },
+      () => {
+        if (this.layersPanelOpen) this.toggleLayersPanel();
+      },
+    );
+    this.map.addControl(this.basemapControl);
     this.map.addControl(
       new FullscreenControl({
         container: this.getContainer(),
@@ -199,7 +227,7 @@ export class OgmMap {
     await this.loadPreview();
   }
 
-  async loadPreview() {
+  async loadPreview(preserveView = false) {
     if (!this.previewer || !this.map) return;
 
     if (!this.mapStyleLoaded) return;
@@ -213,14 +241,16 @@ export class OgmMap {
 
     this.mapLoading.emit();
 
-    this.layerControls = [];
-    this.layerState.clear();
-    this.layersPanelOpen = false;
-    this.layersControl.setPressed(false);
+    if (!preserveView) {
+      this.layerControls = [];
+      this.layerState.clear();
+      this.layersPanelOpen = false;
+      this.layersControl.setPressed(false);
+    }
 
     this.destroyPopup();
 
-    this.applyViewConstraints();
+    if (!preserveView) this.applyViewConstraints();
 
     // Custom WebGL previews report drawing and errors themselves because they have no MapLibre source.
     const previewer = this.previewer;
@@ -244,19 +274,20 @@ export class OgmMap {
       this.previewer.attach(this.map, this.mapTheme.getStyle());
       await this.previewer.preview();
 
-      this.applyViewConstraints();
+      if (!preserveView) this.applyViewConstraints();
 
       // Start waiting before fitting bounds, which can trigger the first tile request.
-      this.startLoadDeadline();
+      if (!preserveView || this.previewer.anyLayerVisible) this.startLoadDeadline();
       const settled = this.previewSettled;
 
       this.applyLayerState();
       this.setupLayerControls();
 
-      const bounds = await this.previewer.getBounds();
-      if (bounds) await this.fitMapBounds(bounds);
-
-      await this.fitToReportedBounds(previewer);
+      if (!preserveView) {
+        const bounds = await previewer.getBounds();
+        if (bounds) await this.fitMapBounds(bounds);
+        await this.fitToReportedBounds(previewer);
+      }
 
       await settled;
     } catch (error) {
@@ -272,9 +303,11 @@ export class OgmMap {
   @Watch('lightBasemap')
   async onThemeChange() {
     if (!this.map) return;
+    this.basemapRevision++;
     this.mapTheme.theme = this.theme;
     this.mapTheme.darkBasemap = this.darkBasemap;
     this.mapTheme.lightBasemap = this.lightBasemap;
+    this.basemapControl?.reset(this.mapTheme.getBaseMapStyle());
     this.destroyPopup();
     this.mapStyleLoaded = false;
     this.basemapFellBack = false;

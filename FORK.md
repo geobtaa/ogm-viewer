@@ -24,6 +24,14 @@ upstream behavior for other consumers. No compiled package is modified at instal
 time. Event declarations are generated from the TypeScript source and exported
 from `ogm-viewer/lib` (using that dependency alias in consuming applications).
 
+## Basemap and opacity controls
+
+Map previews use the droplet to open layer opacity and visibility controls. The
+stacked-layers button opens the same OpenFreeMap radio picker used by the
+Geoportal sidebar. The default is Positron. An explicit choice is saved in the
+`preferred_basemap` cookie when browser storage is available. Embedders can
+still supply custom styles through `light-basemap` and `dark-basemap`.
+
 ## Embedded preview tabs
 
 An embedder can set `external-preview-tabs` on `ogm-viewer` to place navigation

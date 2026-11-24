@@ -1,6 +1,6 @@
 {
   "name": "@geobtaa/ogm-viewer",
-  "version": "1.7.0-btaa.1.2",
+  "version": "1.7.0-btaa.1.3",
   "description": "A web-based viewer for previewing OpenGeoMetadata records",
   "module": "./dist/components/ogm-viewer.js",
   "types": "./dist/components/ogm-viewer.d.ts",
@@ -16,7 +16,11 @@
       "import": "./dist/components/index.js"
     },
     "./components/*": "./dist/components/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./basemaps": {
+      "types": "./dist/basemaps/basemaps.d.ts",
+      "import": "./dist/basemaps/basemaps.js"
+    }
   },
   "repository": {
     "type": "git",
@@ -40,7 +44,8 @@
     "generate": "stencil generate",
     "lint": "tsc --noEmit && prettier --check .",
     "test:browser": "playwright test",
-    "pack:fork": "npm run build && node scripts/pack-fork.mjs"
+    "pack:fork": "npm run build && node scripts/pack-fork.mjs",
+    "postbuild": "tsc --ignoreConfig --module ESNext --moduleResolution bundler --target ES2022 --skipLibCheck --declaration --outDir dist/basemaps src/lib/basemaps.ts"
   },
   "devDependencies": {
     "@mapbox/vector-tile": "^2.0.4",

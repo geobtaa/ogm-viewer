@@ -2,6 +2,7 @@ import type { SkySpecification, StyleSpecification } from 'maplibre-gl';
 
 import { atLightness, contrastColor, shiftLightness } from './color';
 import Theme from './theme';
+import { BASEMAP_STYLES, DEFAULT_BASEMAP, getSavedBasemapKey } from '../basemaps';
 
 export type MapLibreStyle = {
   opacity: number;
@@ -25,8 +26,8 @@ export type MapLibreStyle = {
   overviewPadding: number;
 };
 
-export const darkBasemapStyle = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
-export const lightBasemapStyle = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
+export const lightBasemapStyle = BASEMAP_STYLES[DEFAULT_BASEMAP];
+export const darkBasemapStyle = BASEMAP_STYLES[DEFAULT_BASEMAP];
 
 export const defaultBeforeId = 'watername_ocean';
 
@@ -101,7 +102,7 @@ export default class MapLibreTheme extends Theme {
 
   getBaseMapStyle(): string {
     const darkMode = this.darkMode();
-    return (darkMode ? this.darkBasemap : this.lightBasemap) ?? (darkMode ? darkBasemapStyle : lightBasemapStyle);
+    return (darkMode ? this.darkBasemap : this.lightBasemap) ?? BASEMAP_STYLES[getSavedBasemapKey()];
   }
 
   getFallbackBaseMapStyle(): StyleSpecification {

@@ -41,6 +41,8 @@ Call `selectPreviewTab(id)` to activate an available preview. The viewer
 continues to handle manifest preference, initial failure recovery and image
 selection. The default viewer retains its built-in navigation.
 
+PMTiles references can contain a single URL or a list of URLs and labelled links. Each distinct archive has its own tab, in metadata order. Unlabelled archives in a list appear as PMTiles 1, PMTiles 2, and so on.
+
 ## Bounds compatibility
 
 Issue #1 adds support for `dcat_bbox` supplied as `west,south,east,north`,

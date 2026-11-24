@@ -31,7 +31,12 @@ export function resourcesFor(record: OgmRecord, requestTransform?: RequestTransf
   // An annotation supplies control points, so attach it to an image resource rather than a tab of its own.
   if (references.iiifManifestUrl) resources.push(new IIIFManifestResource(id, references.iiifManifestUrl, bounds, requestTransform, references.georeferenceUrl));
   if (references.indexMapUrl) resources.push(new OpenIndexMapResource(id, references.indexMapUrl, bounds, requestTransform, references.fgdcUrl));
-  if (references.pmtilesUrl) resources.push(new PMTilesResource(id, references.pmtilesUrl, bounds, requestTransform));
+  const archives = references.pmtilesLinks;
+  archives.forEach(({ url, label }, index) => {
+    const archiveId = archives.length > 1 ? `${id}-archive-${index + 1}` : id;
+    const title = label || (archives.length > 1 ? `PMTiles ${index + 1}` : 'PMTiles');
+    resources.push(new PMTilesResource(archiveId, url, bounds, requestTransform, title));
+  });
   if (references.tilejsonUrl) resources.push(new TileJsonResource(id, references.tilejsonUrl, bounds, requestTransform));
   if (references.geojsonUrl) resources.push(new GeoJsonResource(id, references.geojsonUrl, bounds, requestTransform));
   if (references.esriFeatureLayerUrl) resources.push(new EsriFeatureLayerResource(id, references.esriFeatureLayerUrl, bounds, requestTransform));

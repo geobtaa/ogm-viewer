@@ -56,10 +56,12 @@ function canonicalizeKeys(parsed: unknown): ReferencesRecord {
 }
 
 export type LabelledLinks = { url: string; label: string }[];
-type NonDownloadReferenceURI = Exclude<ReferenceURI, 'http://schema.org/downloadUrl'>;
+type ArchiveLink = { url: string; label?: string };
+type PMTilesReference = { 'https://github.com/protomaps/PMTiles': string | ArchiveLink | (string | ArchiveLink)[] };
+type SingleReferenceURI = Exclude<ReferenceURI, 'http://schema.org/downloadUrl' | keyof PMTilesReference>;
 type DownloadReference = { 'http://schema.org/downloadUrl': string | LabelledLinks };
 
-export type ReferencesRecord = Partial<{ [key in NonDownloadReferenceURI]: string } & DownloadReference>;
+export type ReferencesRecord = Partial<{ [key in SingleReferenceURI]: string } & DownloadReference & PMTilesReference>;
 
 export class References {
   private references: ReferencesRecord;
@@ -102,7 +104,19 @@ export class References {
   }
 
   get pmtilesUrl() {
-    return this.references['https://github.com/protomaps/PMTiles'];
+    return this.pmtilesLinks[0]?.url;
+  }
+
+  get pmtilesLinks(): ArchiveLink[] {
+    const value = this.references['https://github.com/protomaps/PMTiles'];
+    const links = new Map<string, ArchiveLink>();
+    for (const entry of Array.isArray(value) ? value : [value]) {
+      const url = typeof entry === 'string' ? entry : entry?.url;
+      if (typeof url !== 'string' || !url.trim() || links.has(url.trim())) continue;
+      const label = typeof entry === 'object' && typeof entry?.label === 'string' ? entry.label.trim() : undefined;
+      links.set(url.trim(), { url: url.trim(), label });
+    }
+    return [...links.values()];
   }
 
   get wmtsUrl() {

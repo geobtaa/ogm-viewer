@@ -17,13 +17,14 @@ import IIIFManifestResource from './iiif-manifest';
 import LocationResource from './location';
 import OpenIndexMapResource from './openindexmap';
 import PMTilesResource from './pmtiles';
+import PMTilesVectorPreviewer from '../previewers/pmtiles-vector';
 import TileJsonResource from './tilejson';
 import TmsResource from './tms';
 import WmsResource from './wms';
 import WmtsResource from './wmts';
 import XyzResource from './xyz';
 
-const buildRecord = (references: Record<string, string>, extra: Partial<GeoBlacklightSchemaAardvark> = {}) =>
+const buildRecord = (references: Record<string, unknown>, extra: Partial<GeoBlacklightSchemaAardvark> = {}) =>
   new OgmRecord({
     id: 'berkeley-s7sq63',
     dct_title_s: 'Calaveras County Contours',
@@ -63,6 +64,19 @@ describe('resourcesFor', () => {
     expect(resources[0].id).toEqual('berkeley-s7sq63');
 
     expect(resources[0].kind).toEqual(kind);
+  });
+
+  it('gives each distinct PMTiles archive its own URL, label and selectable panel', () => {
+    const polygons = 'https://example.com/polygons.pmtiles';
+    const faults = 'https://example.com/faults.pmtiles';
+    const record = buildRecord({
+      'https://github.com/protomaps/PMTiles': [polygons, { url: faults, label: 'Faults' }, polygons, null, {}],
+    });
+    const tabs = resourcesFor(record).map(resource => new PMTilesVectorPreviewer(resource));
+    expect(tabs.map(tab => tab.url)).toEqual([polygons, faults]);
+    expect(tabs.map(tab => tab.label())).toEqual(['PMTiles 1', 'Faults']);
+    expect(new Set(tabs.map(tab => tab.previewId)).size).toBe(2);
+    expect(record.references.pmtilesUrl).toBe(polygons);
   });
 
   it('offers resources in the order they should be presented', () => {

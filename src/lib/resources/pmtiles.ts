@@ -77,7 +77,13 @@ export default class PMTilesResource extends Resource {
   private metadata: Metadata;
   private header: Header;
 
-  constructor(id: string, url: string, bounds?: LngLatBoundsLike, requestTransform?: RequestTransform) {
+  constructor(
+    id: string,
+    url: string,
+    bounds?: LngLatBoundsLike,
+    requestTransform?: RequestTransform,
+    private readonly title = 'PMTiles',
+  ) {
     super(id, url, bounds, requestTransform);
 
     const transformed = requestTransform?.(url, 'tile');
@@ -90,7 +96,7 @@ export default class PMTilesResource extends Resource {
   }
 
   label() {
-    return 'PMTiles';
+    return this.title;
   }
 
   protected async getMetadata() {
